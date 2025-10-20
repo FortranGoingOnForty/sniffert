@@ -29,6 +29,11 @@ program sniffert
     current_path = '.'
   end if
 
+  ! Scan BEFORE initializing UI so we can see errors
+  print *, "Scanning directory: ", trim(current_path)
+  call build_tree(current_path, root_node)
+  print *, "Scan complete. Found ", root_node%num_children, " items"
+
   ! Initialize terminal UI
   call init_ui()
 
@@ -39,9 +44,6 @@ program sniffert
     print *, "ERROR: Terminal too small. Minimum 40x20 required."
     stop 1
   end if
-
-  ! Scan initial directory
-  call build_tree(current_path, root_node)
 
   ! Initialize selection state
   call init_selection(selection, root_node)

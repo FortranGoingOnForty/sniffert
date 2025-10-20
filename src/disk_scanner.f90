@@ -9,15 +9,25 @@ module disk_scanner
 
 contains
 
-  ! Scan a directory and build a file tree
-  recursive subroutine scan_directory(path, node)
+  ! Scan a directory and build a file tree (with optional depth limiting)
+  recursive subroutine scan_directory(path, node, current_depth)
     character(len=*), intent(in) :: path
     type(file_node), intent(inout) :: node
-    character(len=256), dimension(10000) :: entries
-    integer :: num_entries, i, valid_children
+    integer, intent(in), optional :: current_depth
+    character(len=256), dimension(:), allocatable :: entries
+    integer :: num_entries, i, valid_children, depth, max_entries
     character(len=512) :: child_path
     type(file_node), allocatable :: temp_children(:)
     logical :: skip_entry
+    integer, parameter :: MAX_DEPTH = 100
+    integer, parameter :: MAX_FILES_PER_DIR = 10000
+
+    ! Handle depth parameter
+    if (present(current_depth)) then
+      depth = current_depth
+    else
+      depth = 0
+    end if
 
     ! Set node properties
     node%path = path
@@ -35,8 +45,18 @@ contains
     node%is_directory = is_directory(path)
 
     if (node%is_directory) then
+      ! Check depth limit
+      if (depth >= MAX_DEPTH) then
+        node%access_denied = .true.
+        node%size = 0_int64
+        return
+      end if
+
+      ! Allocate entries array on heap instead of stack
+      allocate(entries(MAX_FILES_PER_DIR))
+
       ! List directory contents (returns 0 on error/permission denied)
-      num_entries = list_directory(path, entries, 10000)
+      num_entries = list_directory(path, entries, MAX_FILES_PER_DIR)
 
       ! If we got entries, scan them
       if (num_entries > 0) then
@@ -52,9 +72,9 @@ contains
           ! Skip symbolic links
           if (is_symlink(child_path)) cycle
 
-          ! Recursively scan child
+          ! Recursively scan child (with depth+1)
           valid_children = valid_children + 1
-          call scan_directory(child_path, temp_children(valid_children))
+          call scan_directory(child_path, temp_children(valid_children), depth + 1)
         end do
 
         ! Copy valid children to node
@@ -74,6 +94,9 @@ contains
           node%size = node%size + node%children(i)%size
         end do
       end if
+
+      ! Deallocate entries array
+      if (allocated(entries)) deallocate(entries)
     else
       ! File - get size directly
       node%size = get_file_size(path)
