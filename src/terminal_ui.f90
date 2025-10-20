@@ -126,13 +126,23 @@ contains
     integer :: x, y, res
     character(len=1) :: corner, horiz, vert
 
-    corner = '+'
-    horiz = '-'
-    vert = '|'
+    ! Use different border characters for selected vs unselected
+    if (highlighted) then
+      corner = '#'
+      horiz = '#'
+      vert = '#'
+    else
+      corner = '+'
+      horiz = '-'
+      vert = '|'
+    end if
 
-    ! Set color
-    res = nc_attron(color_pair_num)
-    if (highlighted) res = nc_attron(A_REVERSE)
+    ! Set color and attributes
+    res = nc_attron(nc_color_pair(color_pair_num))
+    if (highlighted) then
+      res = nc_attron(A_BOLD)
+      res = nc_attron(A_REVERSE)
+    end if
 
     ! Draw top border
     res = nc_move(bounds%y, bounds%x)
@@ -158,8 +168,12 @@ contains
     end do
     res = nc_addch(ichar(corner))
 
-    if (highlighted) res = nc_attroff(A_REVERSE)
-    res = nc_attroff(color_pair_num)
+    ! Turn off attributes
+    if (highlighted) then
+      res = nc_attroff(A_REVERSE)
+      res = nc_attroff(A_BOLD)
+    end if
+    res = nc_attroff(nc_color_pair(color_pair_num))
   end subroutine draw_box
 
   ! Draw text inside a box
@@ -273,7 +287,7 @@ contains
     character(len=256) :: status_text
     integer :: res
 
-    write(status_text, '(A,A,A)') '[q]uit [c]hdir [d]elete | ', &
+    write(status_text, '(A,A,A)') 'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
                                    trim(root_node%path), ' '
 
     res = nc_move(y, 0)
@@ -299,7 +313,7 @@ contains
       case (KEY_UP)
         action = 'u'
       case (KEY_DOWN)
-        action = 'd'
+        action = 'j'  ! j for down (vim-style, avoids conflict with 'd'elete)
       case (KEY_LEFT)
         action = 'l'
       case (KEY_RIGHT)

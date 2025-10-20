@@ -4,13 +4,15 @@ program sniffert
   use disk_scanner
   use treemap_layout
   use terminal_ui
+  use navigation
   implicit none
 
   type(file_node) :: root_node
   type(rect) :: screen_bounds
-  character(len=512) :: current_path, selected_path
+  type(selection_state) :: selection
+  character(len=512) :: current_path
   character(len=1) :: action
-  logical :: running, size_ok
+  logical :: running, size_ok, needs_rescan
   integer :: nargs, max_y, max_x
   character(len=256) :: arg
 
@@ -40,7 +42,9 @@ program sniffert
 
   ! Scan initial directory
   call build_tree(current_path, root_node)
-  selected_path = current_path
+
+  ! Initialize selection state
+  call init_selection(selection, root_node)
 
   ! Calculate treemap layout for initial screen size
   call get_terminal_dimensions(max_y, max_x)
@@ -51,9 +55,10 @@ program sniffert
   call calculate_treemap(root_node, screen_bounds)
 
   ! Main loop
+  needs_rescan = .false.
   do while (running)
-    ! Render the current view
-    call render_treemap(root_node, selected_path)
+    ! Render the current view with selection
+    call render_treemap(root_node, get_selected_path(selection))
 
     ! Handle input
     action = handle_input()
@@ -64,20 +69,54 @@ program sniffert
         running = .false.
 
       case ('c')
-        ! Change directory (stub - needs implementation)
-        ! Would navigate into the selected directory
-        continue
+        ! Change directory - drill down into selected node
+        if (selection%depth >= 0) then
+          current_path = get_selected_path(selection)
+          needs_rescan = .true.
+        end if
 
       case ('d')
         ! Delete (stub - needs confirmation dialog and implementation)
         ! Would show warning and delete selected directory
         continue
 
+      case ('u')
+        ! Up arrow - previous sibling
+        call move_up(selection, root_node)
+
+      case ('j')
+        ! Down arrow - next sibling (j for down since 'd' is delete)
+        call move_down(selection, root_node)
+
+      case ('l')
+        ! Left arrow - parent
+        call move_left(selection, root_node)
+
+      case ('r')
+        ! Right arrow - first child
+        call move_right(selection, root_node)
+
       case default
-        ! Unknown input or arrow keys, ignore for now
-        ! Arrow key navigation will be implemented in Phase 5
+        ! Unknown input, ignore
         continue
     end select
+
+    ! Handle directory change
+    if (needs_rescan) then
+      ! Re-scan from new directory
+      call build_tree(current_path, root_node)
+      call init_selection(selection, root_node)
+
+      ! Recalculate layout
+      call get_terminal_dimensions(max_y, max_x)
+      screen_bounds%x = 0
+      screen_bounds%y = 0
+      screen_bounds%width = max_x
+      screen_bounds%height = max_y - 2
+      call calculate_treemap(root_node, screen_bounds)
+
+      needs_rescan = .false.
+    end if
   end do
 
   ! Cleanup
