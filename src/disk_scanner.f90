@@ -13,47 +13,67 @@ contains
   recursive subroutine scan_directory(path, node)
     character(len=*), intent(in) :: path
     type(file_node), intent(inout) :: node
-    character(len=256), dimension(1000) :: entries
-    integer :: num_entries, i
+    character(len=256), dimension(10000) :: entries
+    integer :: num_entries, i, valid_children
     character(len=512) :: child_path
-    type(file_node) :: child_node
+    type(file_node), allocatable :: temp_children(:)
+    logical :: skip_entry
 
     ! Set node properties
     node%path = path
     node%name = extract_filename(path)
-    node%is_directory = is_directory(path)
     node%num_children = 0
+    node%access_denied = .false.
+
+    ! Check if this is a symbolic link - skip if so
+    if (is_symlink(path)) then
+      node%is_directory = .false.
+      node%size = 0_int64
+      return
+    end if
+
+    node%is_directory = is_directory(path)
 
     if (node%is_directory) then
-      ! List directory contents
-      num_entries = list_directory(path, entries, 1000)
+      ! List directory contents (returns 0 on error/permission denied)
+      num_entries = list_directory(path, entries, 10000)
 
-      ! Allocate children array
+      ! If we got entries, scan them
       if (num_entries > 0) then
-        allocate(node%children(num_entries))
+        ! Allocate temporary array for children
+        allocate(temp_children(num_entries))
+        valid_children = 0
 
         ! Recursively scan children
         do i = 1, num_entries
-          ! Skip . and ..
-          if (trim(entries(i)) == '.' .or. trim(entries(i)) == '..') cycle
-
           ! Build child path
           child_path = trim(path) // get_path_separator() // trim(entries(i))
 
-          ! Recursively scan child
-          call scan_directory(child_path, child_node)
+          ! Skip symbolic links
+          if (is_symlink(child_path)) cycle
 
-          ! Add to children
-          node%num_children = node%num_children + 1
-          node%children(node%num_children) = child_node
+          ! Recursively scan child
+          valid_children = valid_children + 1
+          call scan_directory(child_path, temp_children(valid_children))
         end do
+
+        ! Copy valid children to node
+        if (valid_children > 0) then
+          allocate(node%children(valid_children))
+          node%children(1:valid_children) = temp_children(1:valid_children)
+          node%num_children = valid_children
+        end if
+
+        deallocate(temp_children)
       end if
 
       ! Calculate directory size as sum of children
       node%size = 0_int64
-      do i = 1, node%num_children
-        node%size = node%size + node%children(i)%size
-      end do
+      if (allocated(node%children)) then
+        do i = 1, node%num_children
+          node%size = node%size + node%children(i)%size
+        end do
+      end if
     else
       ! File - get size directly
       node%size = get_file_size(path)

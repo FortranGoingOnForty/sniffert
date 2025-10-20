@@ -1,90 +1,332 @@
 module treemap_layout
   use types
-  use iso_fortran_env, only: int64
+  use iso_fortran_env, only: int64, real64
   implicit none
   private
 
-  public :: calculate_treemap, layout_squarified
+  public :: calculate_treemap
 
 contains
 
   ! Calculate treemap layout using squarified algorithm
-  subroutine calculate_treemap(node, bounds)
-    type(file_node), intent(in) :: node
+  recursive subroutine calculate_treemap(node, bounds)
+    type(file_node), intent(inout) :: node
     type(rect), intent(in) :: bounds
+    integer :: i
 
+    ! Set this node's bounds
+    node%bounds = bounds
+
+    ! If no children or zero size, nothing to layout
     if (.not. allocated(node%children) .or. node%num_children == 0) then
       return
     end if
 
-    ! Call squarified layout algorithm
-    call layout_squarified(node%children, node%num_children, bounds, node%size)
+    if (node%size == 0) return
+
+    ! Sort children by size (descending) for better aspect ratios
+    call sort_by_size(node%children, node%num_children)
+
+    ! Layout children using squarified algorithm
+    call squarify(node%children, node%num_children, bounds, node%size)
+
+    ! Recursively layout each child's children
+    do i = 1, node%num_children
+      if (allocated(node%children(i)%children)) then
+        call calculate_treemap(node%children(i), node%children(i)%bounds)
+      end if
+    end do
   end subroutine calculate_treemap
 
-  ! Squarified treemap layout algorithm
-  recursive subroutine layout_squarified(nodes, num_nodes, bounds, total_size)
-    type(file_node), dimension(:), intent(in) :: nodes
+  ! Squarified treemap layout algorithm (Bruls et al.)
+  recursive subroutine squarify(nodes, num_nodes, bounds, total_size)
+    type(file_node), dimension(:), intent(inout) :: nodes
     integer, intent(in) :: num_nodes
     type(rect), intent(in) :: bounds
     integer(int64), intent(in) :: total_size
 
-    integer :: i
-    real :: area_ratio
-    type(rect) :: child_bounds
-    integer :: remaining_width, remaining_height
-    integer :: x_offset, y_offset
-
-    ! Stub implementation - simplified horizontal layout for now
-    ! TODO: Implement proper squarified treemap algorithm
-    ! The algorithm should:
-    ! 1. Sort children by size (descending)
-    ! 2. Partition into rows to minimize aspect ratio
-    ! 3. Recursively layout each row
+    integer :: i, row_start, row_end
+    real(real64) :: remaining_area, row_area
+    type(rect) :: remaining_bounds, row_bounds
+    logical :: layout_horizontal
 
     if (num_nodes == 0 .or. bounds%width <= 0 .or. bounds%height <= 0) return
+    if (total_size == 0) return
 
-    ! Simple horizontal subdivision for now
-    remaining_width = bounds%width
+    ! Determine layout direction (use shorter dimension for rows)
+    layout_horizontal = bounds%width >= bounds%height
+
+    remaining_bounds = bounds
+    remaining_area = real(total_size, real64)
+    row_start = 1
+
+    do while (row_start <= num_nodes)
+      ! Find best row: add items while aspect ratio improves
+      row_end = find_best_row(nodes(row_start:num_nodes), &
+                             num_nodes - row_start + 1, &
+                             remaining_bounds, &
+                             layout_horizontal)
+      row_end = row_start + row_end - 1
+
+      ! Calculate row area
+      row_area = 0.0_real64
+      do i = row_start, row_end
+        row_area = row_area + real(nodes(i)%size, real64)
+      end do
+
+      ! Layout this row
+      if (layout_horizontal) then
+        ! Horizontal row (items placed left-to-right)
+        call layout_row_horizontal(nodes(row_start:row_end), &
+                                   row_end - row_start + 1, &
+                                   remaining_bounds, &
+                                   row_area, &
+                                   row_bounds)
+        ! Update remaining bounds (move down)
+        remaining_bounds%y = remaining_bounds%y + row_bounds%height
+        remaining_bounds%height = remaining_bounds%height - row_bounds%height
+      else
+        ! Vertical row (items placed top-to-bottom)
+        call layout_row_vertical(nodes(row_start:row_end), &
+                                row_end - row_start + 1, &
+                                remaining_bounds, &
+                                row_area, &
+                                row_bounds)
+        ! Update remaining bounds (move right)
+        remaining_bounds%x = remaining_bounds%x + row_bounds%width
+        remaining_bounds%width = remaining_bounds%width - row_bounds%width
+      end if
+
+      row_start = row_end + 1
+    end do
+  end subroutine squarify
+
+  ! Find best row: add items while worst aspect ratio improves
+  function find_best_row(nodes, num_nodes, bounds, horizontal) result(row_size)
+    type(file_node), dimension(:), intent(in) :: nodes
+    integer, intent(in) :: num_nodes
+    type(rect), intent(in) :: bounds
+    logical, intent(in) :: horizontal
+    integer :: row_size
+
+    real(real64) :: current_area, new_area
+    real :: current_worst, new_worst
+    integer :: i
+
+    if (num_nodes == 0) then
+      row_size = 0
+      return
+    end if
+
+    row_size = 1
+    current_area = real(nodes(1)%size, real64)
+    current_worst = calc_worst_aspect_ratio(nodes(1:1), 1, bounds, &
+                                            horizontal, current_area)
+
+    ! Try adding items while aspect ratio improves
+    do i = 2, num_nodes
+      new_area = current_area + real(nodes(i)%size, real64)
+      new_worst = calc_worst_aspect_ratio(nodes(1:i), i, bounds, &
+                                          horizontal, new_area)
+
+      if (new_worst <= current_worst) then
+        ! Aspect ratio improved or stayed same, add to row
+        row_size = i
+        current_area = new_area
+        current_worst = new_worst
+      else
+        ! Aspect ratio got worse, stop here
+        exit
+      end if
+    end do
+  end function find_best_row
+
+  ! Calculate worst aspect ratio for a row of items
+  function calc_worst_aspect_ratio(nodes, num_nodes, bounds, horizontal, row_area) result(worst)
+    type(file_node), dimension(:), intent(in) :: nodes
+    integer, intent(in) :: num_nodes
+    type(rect), intent(in) :: bounds
+    logical, intent(in) :: horizontal
+    real(real64), intent(in) :: row_area
+    real :: worst
+
+    real(real64) :: row_dim, other_dim, item_dim
+    real :: item_aspect
+    integer :: i
+
+    worst = 0.0
+
+    if (row_area <= 0.0_real64) then
+      worst = huge(1.0)
+      return
+    end if
+
+    if (horizontal) then
+      ! Horizontal row: height is fixed, widths vary
+      other_dim = real(bounds%width, real64)
+      if (other_dim <= 0.0_real64) then
+        worst = huge(1.0)
+        return
+      end if
+      row_dim = row_area / other_dim  ! Height of row
+
+      do i = 1, num_nodes
+        item_dim = real(nodes(i)%size, real64) / row_dim  ! Width of item
+        item_aspect = aspect_ratio(int(item_dim), int(row_dim))
+        worst = max(worst, item_aspect)
+      end do
+    else
+      ! Vertical row: width is fixed, heights vary
+      other_dim = real(bounds%height, real64)
+      if (other_dim <= 0.0_real64) then
+        worst = huge(1.0)
+        return
+      end if
+      row_dim = row_area / other_dim  ! Width of row
+
+      do i = 1, num_nodes
+        item_dim = real(nodes(i)%size, real64) / row_dim  ! Height of item
+        item_aspect = aspect_ratio(int(row_dim), int(item_dim))
+        worst = max(worst, item_aspect)
+      end do
+    end if
+  end function calc_worst_aspect_ratio
+
+  ! Layout a horizontal row (items left-to-right)
+  subroutine layout_row_horizontal(nodes, num_nodes, bounds, row_area, row_bounds)
+    type(file_node), dimension(:), intent(inout) :: nodes
+    integer, intent(in) :: num_nodes
+    type(rect), intent(in) :: bounds
+    real(real64), intent(in) :: row_area
+    type(rect), intent(out) :: row_bounds
+
+    integer :: i, x_offset, item_width, remaining_width
+    real(real64) :: row_height
+
+    ! Calculate row height
+    if (bounds%width > 0) then
+      row_height = row_area / real(bounds%width, real64)
+    else
+      row_height = 0.0_real64
+    end if
+
+    row_bounds%x = bounds%x
+    row_bounds%y = bounds%y
+    row_bounds%width = bounds%width
+    row_bounds%height = max(1, int(row_height))
+
     x_offset = bounds%x
+    remaining_width = bounds%width
 
     do i = 1, num_nodes
-      if (total_size > 0) then
-        area_ratio = real(nodes(i)%size) / real(total_size)
-        child_bounds%width = int(area_ratio * bounds%width)
+      if (row_height > 0.0_real64) then
+        item_width = int(real(nodes(i)%size, real64) / row_height)
       else
-        child_bounds%width = bounds%width / num_nodes
+        item_width = 0
       end if
 
-      child_bounds%x = x_offset
-      child_bounds%y = bounds%y
-      child_bounds%height = bounds%height
-
-      ! Ensure we don't exceed bounds
+      ! Last item gets all remaining width (handles rounding)
       if (i == num_nodes) then
-        child_bounds%width = remaining_width
+        item_width = remaining_width
       end if
 
-      ! Recursively layout children
-      if (allocated(nodes(i)%children)) then
-        call calculate_treemap(nodes(i), child_bounds)
-      end if
+      item_width = max(1, min(item_width, remaining_width))
 
-      x_offset = x_offset + child_bounds%width
-      remaining_width = remaining_width - child_bounds%width
+      nodes(i)%bounds%x = x_offset
+      nodes(i)%bounds%y = bounds%y
+      nodes(i)%bounds%width = item_width
+      nodes(i)%bounds%height = row_bounds%height
+
+      x_offset = x_offset + item_width
+      remaining_width = remaining_width - item_width
     end do
-  end subroutine layout_squarified
+  end subroutine layout_row_horizontal
 
-  ! Calculate aspect ratio for a rectangle
+  ! Layout a vertical row (items top-to-bottom)
+  subroutine layout_row_vertical(nodes, num_nodes, bounds, row_area, row_bounds)
+    type(file_node), dimension(:), intent(inout) :: nodes
+    integer, intent(in) :: num_nodes
+    type(rect), intent(in) :: bounds
+    real(real64), intent(in) :: row_area
+    type(rect), intent(out) :: row_bounds
+
+    integer :: i, y_offset, item_height, remaining_height
+    real(real64) :: row_width
+
+    ! Calculate row width
+    if (bounds%height > 0) then
+      row_width = row_area / real(bounds%height, real64)
+    else
+      row_width = 0.0_real64
+    end if
+
+    row_bounds%x = bounds%x
+    row_bounds%y = bounds%y
+    row_bounds%width = max(1, int(row_width))
+    row_bounds%height = bounds%height
+
+    y_offset = bounds%y
+    remaining_height = bounds%height
+
+    do i = 1, num_nodes
+      if (row_width > 0.0_real64) then
+        item_height = int(real(nodes(i)%size, real64) / row_width)
+      else
+        item_height = 0
+      end if
+
+      ! Last item gets all remaining height (handles rounding)
+      if (i == num_nodes) then
+        item_height = remaining_height
+      end if
+
+      item_height = max(1, min(item_height, remaining_height))
+
+      nodes(i)%bounds%x = bounds%x
+      nodes(i)%bounds%y = y_offset
+      nodes(i)%bounds%width = row_bounds%width
+      nodes(i)%bounds%height = item_height
+
+      y_offset = y_offset + item_height
+      remaining_height = remaining_height - item_height
+    end do
+  end subroutine layout_row_vertical
+
+  ! Calculate aspect ratio for a rectangle (always >= 1.0)
   pure function aspect_ratio(width, height) result(ratio)
     integer, intent(in) :: width, height
     real :: ratio
 
-    if (height > 0) then
+    if (height > 0 .and. width > 0) then
       ratio = real(width) / real(height)
       if (ratio < 1.0) ratio = 1.0 / ratio
     else
       ratio = huge(1.0)
     end if
   end function aspect_ratio
+
+  ! Sort nodes by size (descending) using simple bubble sort
+  ! (Good enough for typical directory sizes, could upgrade to quicksort later)
+  subroutine sort_by_size(nodes, num_nodes)
+    type(file_node), dimension(:), intent(inout) :: nodes
+    integer, intent(in) :: num_nodes
+    type(file_node) :: temp
+    integer :: i, j
+    logical :: swapped
+
+    do i = 1, num_nodes - 1
+      swapped = .false.
+      do j = 1, num_nodes - i
+        if (nodes(j)%size < nodes(j+1)%size) then
+          ! Swap
+          temp = nodes(j)
+          nodes(j) = nodes(j+1)
+          nodes(j+1) = temp
+          swapped = .true.
+        end if
+      end do
+      if (.not. swapped) exit  ! Already sorted
+    end do
+  end subroutine sort_by_size
 
 end module treemap_layout

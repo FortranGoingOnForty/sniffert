@@ -4,7 +4,7 @@ module file_system
   implicit none
   private
 
-  public :: get_file_size, is_directory, list_directory, get_path_separator
+  public :: get_file_size, is_directory, is_symlink, list_directory, get_path_separator
 
   ! POSIX stat structure (simplified)
   type, bind(c) :: c_stat
@@ -23,19 +23,53 @@ module file_system
     integer(c_long) :: st_ctime
   end type c_stat
 
-  ! S_IFDIR constant for directory check
+  ! POSIX dirent structure (simplified, platform-specific)
+  ! On macOS, d_name is 256 bytes, but other fields vary
+  type, bind(c) :: c_dirent
+    integer(c_long) :: d_ino
+    integer(c_short) :: d_reclen
+    integer(c_int8_t) :: d_type
+    integer(c_int8_t) :: d_namlen
+    character(kind=c_char) :: d_name(256)
+  end type c_dirent
+
+  ! File type constants
   integer(c_int), parameter :: S_IFDIR = int(o'040000', c_int)
+  integer(c_int), parameter :: S_IFLNK = int(o'120000', c_int)
   integer(c_int), parameter :: S_IFMT = int(o'170000', c_int)
 
+  ! dirent d_type constants (not currently used, but available)
+  integer(c_int8_t), parameter :: DT_DIR = 4
+  integer(c_int8_t), parameter :: DT_REG = 8
+  integer(c_int8_t), parameter :: DT_LNK = 10
+
   interface
-    ! stat syscall
-    function c_stat_file(path, buf) bind(c, name="stat")
+    ! C helper functions
+    function list_dir_helper(path, names, max_entries) bind(c, name="list_dir_helper")
       use iso_c_binding
-      import :: c_stat
       type(c_ptr), value :: path
-      type(c_stat) :: buf
-      integer(c_int) :: c_stat_file
-    end function c_stat_file
+      character(kind=c_char), dimension(*) :: names
+      integer(c_int), value :: max_entries
+      integer(c_int) :: list_dir_helper
+    end function list_dir_helper
+
+    function is_dir_helper(path) bind(c, name="is_dir_helper")
+      use iso_c_binding
+      type(c_ptr), value :: path
+      integer(c_int) :: is_dir_helper
+    end function is_dir_helper
+
+    function is_link_helper(path) bind(c, name="is_link_helper")
+      use iso_c_binding
+      type(c_ptr), value :: path
+      integer(c_int) :: is_link_helper
+    end function is_link_helper
+
+    function get_size_helper(path) bind(c, name="get_size_helper")
+      use iso_c_binding
+      type(c_ptr), value :: path
+      integer(c_long_long) :: get_size_helper
+    end function get_size_helper
   end interface
 
 contains
@@ -44,52 +78,70 @@ contains
   function get_file_size(filepath) result(size)
     character(len=*), intent(in) :: filepath
     integer(int64) :: size
-    type(c_stat) :: stat_buf
     character(len=len(filepath)+1, kind=c_char), target :: c_path
-    integer(c_int) :: stat_result
+    integer(c_long_long) :: c_size
 
-    size = 0_int64
     c_path = trim(filepath) // c_null_char
-    stat_result = c_stat_file(c_loc(c_path), stat_buf)
-
-    if (stat_result == 0) then
-      size = int(stat_buf%st_size, int64)
-    end if
+    c_size = get_size_helper(c_loc(c_path))
+    size = int(c_size, int64)
   end function get_file_size
 
   ! Check if path is a directory
   function is_directory(filepath) result(is_dir)
     character(len=*), intent(in) :: filepath
     logical :: is_dir
-    type(c_stat) :: stat_buf
     character(len=len(filepath)+1, kind=c_char), target :: c_path
-    integer(c_int) :: stat_result
+    integer(c_int) :: result
 
-    is_dir = .false.
     c_path = trim(filepath) // c_null_char
-    stat_result = c_stat_file(c_loc(c_path), stat_buf)
-
-    if (stat_result == 0) then
-      is_dir = iand(stat_buf%st_mode, S_IFMT) == S_IFDIR
-    end if
+    result = is_dir_helper(c_loc(c_path))
+    is_dir = (result /= 0)
   end function is_directory
 
-  ! List directory contents (stub - needs proper dirent implementation)
+  ! Check if path is a symbolic link
+  function is_symlink(filepath) result(is_link)
+    character(len=*), intent(in) :: filepath
+    logical :: is_link
+    character(len=len(filepath)+1, kind=c_char), target :: c_path
+    integer(c_int) :: result
+
+    c_path = trim(filepath) // c_null_char
+    result = is_link_helper(c_loc(c_path))
+    is_link = (result /= 0)
+  end function is_symlink
+
+  ! List directory contents using C helper
   function list_directory(dirpath, entries, max_entries) result(num_entries)
     character(len=*), intent(in) :: dirpath
     character(len=256), dimension(:), intent(out) :: entries
     integer, intent(in) :: max_entries
     integer :: num_entries
 
-    ! Stub implementation - will need proper dirent.h bindings
-    ! For now, return 0 entries
-    num_entries = 0
+    character(len=len(dirpath)+1, kind=c_char), target :: c_path
+    character(kind=c_char), dimension(256*max_entries), target :: c_names
+    integer(c_int) :: c_count
+    integer :: i, j, name_start, name_len
 
-    ! TODO: Implement using opendir/readdir/closedir via C bindings
-    ! This will require additional interface definitions for:
-    ! - DIR* opendir(const char *name)
-    ! - struct dirent* readdir(DIR *dirp)
-    ! - int closedir(DIR *dirp)
+    num_entries = 0
+    c_path = trim(dirpath) // c_null_char
+
+    ! Call C helper to get directory names
+    c_count = list_dir_helper(c_loc(c_path), c_names, int(max_entries, c_int))
+    num_entries = int(c_count)
+
+    ! Extract names from C array
+    do i = 1, num_entries
+      name_start = (i - 1) * 256 + 1
+      entries(i) = ''
+      name_len = 0
+
+      ! Copy characters until null terminator
+      do j = 0, 255
+        if (c_names(name_start + j) == c_null_char) exit
+        entries(i)(j+1:j+1) = c_names(name_start + j)
+        name_len = j + 1
+      end do
+    end do
   end function list_directory
 
   ! Get platform-specific path separator
