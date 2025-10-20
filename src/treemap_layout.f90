@@ -305,28 +305,107 @@ contains
     end if
   end function aspect_ratio
 
-  ! Sort nodes by size (descending) using simple bubble sort
-  ! (Good enough for typical directory sizes, could upgrade to quicksort later)
+  ! Sort nodes by size (descending) using quicksort
+  ! Uses index-based sorting to avoid deep-copying file_node objects
   subroutine sort_by_size(nodes, num_nodes)
     type(file_node), dimension(:), intent(inout) :: nodes
     integer, intent(in) :: num_nodes
-    type(file_node) :: temp
-    integer :: i, j
-    logical :: swapped
+    integer, dimension(:), allocatable :: indices
+    type(file_node), dimension(:), allocatable :: temp_nodes
+    integer :: i
 
-    do i = 1, num_nodes - 1
-      swapped = .false.
-      do j = 1, num_nodes - i
-        if (nodes(j)%size < nodes(j+1)%size) then
-          ! Swap
-          temp = nodes(j)
-          nodes(j) = nodes(j+1)
-          nodes(j+1) = temp
-          swapped = .true.
-        end if
-      end do
-      if (.not. swapped) exit  ! Already sorted
+    if (num_nodes <= 1) return
+
+    ! Create index array
+    allocate(indices(num_nodes))
+    do i = 1, num_nodes
+      indices(i) = i
     end do
+
+    ! Quicksort indices by node size (descending)
+    call quicksort_indices(nodes, indices, 1, num_nodes)
+
+    ! Reorder nodes according to sorted indices
+    ! Use move_alloc to transfer allocatable components without deep copying
+    allocate(temp_nodes(num_nodes))
+    do i = 1, num_nodes
+      ! Move allocatable components (avoids deep copy)
+      call move_alloc(nodes(indices(i))%name, temp_nodes(i)%name)
+      call move_alloc(nodes(indices(i))%path, temp_nodes(i)%path)
+      call move_alloc(nodes(indices(i))%children, temp_nodes(i)%children)
+      ! Copy simple types
+      temp_nodes(i)%size = nodes(indices(i))%size
+      temp_nodes(i)%is_directory = nodes(indices(i))%is_directory
+      temp_nodes(i)%access_denied = nodes(indices(i))%access_denied
+      temp_nodes(i)%bounds = nodes(indices(i))%bounds
+      temp_nodes(i)%num_children = nodes(indices(i))%num_children
+    end do
+
+    ! Move back to original array
+    do i = 1, num_nodes
+      call move_alloc(temp_nodes(i)%name, nodes(i)%name)
+      call move_alloc(temp_nodes(i)%path, nodes(i)%path)
+      call move_alloc(temp_nodes(i)%children, nodes(i)%children)
+      nodes(i)%size = temp_nodes(i)%size
+      nodes(i)%is_directory = temp_nodes(i)%is_directory
+      nodes(i)%access_denied = temp_nodes(i)%access_denied
+      nodes(i)%bounds = temp_nodes(i)%bounds
+      nodes(i)%num_children = temp_nodes(i)%num_children
+    end do
+
+    deallocate(indices)
+    deallocate(temp_nodes)
   end subroutine sort_by_size
+
+  ! Quicksort indices array based on node sizes (descending order)
+  recursive subroutine quicksort_indices(nodes, indices, left, right)
+    type(file_node), dimension(:), intent(in) :: nodes
+    integer, dimension(:), intent(inout) :: indices
+    integer, intent(in) :: left, right
+    integer :: pivot_idx
+
+    if (left < right) then
+      call partition_indices(nodes, indices, left, right, pivot_idx)
+      call quicksort_indices(nodes, indices, left, pivot_idx - 1)
+      call quicksort_indices(nodes, indices, pivot_idx + 1, right)
+    end if
+  end subroutine quicksort_indices
+
+  ! Partition for quicksort (sorts in descending order by size)
+  subroutine partition_indices(nodes, indices, left, right, pivot_idx)
+    type(file_node), dimension(:), intent(in) :: nodes
+    integer, dimension(:), intent(inout) :: indices
+    integer, intent(in) :: left, right
+    integer, intent(out) :: pivot_idx
+    integer(int64) :: pivot_size
+    integer :: i, j, temp
+
+    ! Use middle element as pivot
+    pivot_idx = (left + right) / 2
+    pivot_size = nodes(indices(pivot_idx))%size
+
+    ! Move pivot to end
+    temp = indices(pivot_idx)
+    indices(pivot_idx) = indices(right)
+    indices(right) = temp
+
+    ! Partition: larger sizes go to the left
+    i = left - 1
+    do j = left, right - 1
+      if (nodes(indices(j))%size >= pivot_size) then
+        i = i + 1
+        temp = indices(i)
+        indices(i) = indices(j)
+        indices(j) = temp
+      end if
+    end do
+
+    ! Move pivot to its final position
+    i = i + 1
+    temp = indices(i)
+    indices(i) = indices(right)
+    indices(right) = temp
+    pivot_idx = i
+  end subroutine partition_indices
 
 end module treemap_layout

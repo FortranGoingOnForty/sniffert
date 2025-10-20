@@ -1,6 +1,6 @@
 program sniffert
   use types
-  use file_system
+  use file_system, only: is_directory
   use disk_scanner
   use treemap_layout
   use terminal_ui
@@ -23,16 +23,36 @@ program sniffert
   nargs = command_argument_count()
   if (nargs >= 1) then
     call get_command_argument(1, arg)
+
+    ! Check for help flag
+    if (trim(arg) == '-h' .or. trim(arg) == '--help') then
+      call print_usage()
+      stop 0
+    end if
+
     current_path = trim(arg)
   else
     ! Default to current directory
     current_path = '.'
   end if
 
+  ! Validate that path exists and is a directory
+  if (.not. is_directory(current_path)) then
+    print *, "ERROR: '", trim(current_path), "' is not a valid directory"
+    print *
+    call print_usage()
+    stop 1
+  end if
+
   ! Scan BEFORE initializing UI so we can see errors
-  print *, "Scanning directory: ", trim(current_path)
+  print *, "Sniffert - Disk Space Analyzer"
+  print *, "Scanning: ", trim(current_path)
+  print *, "(This may take a moment for large directories...)"
+  print *
   call build_tree(current_path, root_node)
-  print *, "Scan complete. Found ", root_node%num_children, " items"
+  print *, "Scan complete! Found ", root_node%num_children, " items"
+  print *, "Starting interactive view..."
+  print *
 
   ! Initialize terminal UI
   call init_ui()
@@ -54,6 +74,14 @@ program sniffert
   screen_bounds%y = 0
   screen_bounds%width = max_x
   screen_bounds%height = max_y - 2  ! Leave room for status bar
+
+  ! Debug: Check if we have children to render
+  if (root_node%num_children == 0) then
+    call cleanup_ui()
+    print *, "ERROR: No files to display in directory"
+    stop 1
+  end if
+
   call calculate_treemap(root_node, screen_bounds)
 
   ! Main loop
@@ -125,5 +153,31 @@ program sniffert
   call cleanup_ui()
 
   print *, "Sniffert terminated successfully."
+
+contains
+
+  ! Print usage information
+  subroutine print_usage()
+    print *, "Usage: sniffert [DIRECTORY]"
+    print *
+    print *, "A terminal-based disk space analyzer with interactive treemap visualization."
+    print *
+    print *, "Arguments:"
+    print *, "  DIRECTORY    Path to analyze (default: current directory)"
+    print *, "  -h, --help   Show this help message"
+    print *
+    print *, "Interactive Controls:"
+    print *, "  Arrow Keys   Navigate through files and directories"
+    print *, "  ↑/↓          Move to previous/next sibling"
+    print *, "  ←/→          Move to parent/child directory"
+    print *, "  c            Change directory (drill down into selection)"
+    print *, "  q            Quit"
+    print *
+    print *, "Examples:"
+    print *, "  sniffert              # Analyze current directory"
+    print *, "  sniffert /var/log     # Analyze /var/log"
+    print *, "  sniffert ~/Downloads  # Analyze Downloads folder"
+    print *
+  end subroutine print_usage
 
 end program sniffert
