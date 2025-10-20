@@ -1,0 +1,26 @@
+name = "sniffert"
+version = "0.1.0"
+license = "MIT"
+author = "FortranGoingOnForty"
+maintainer = ""
+copyright = "2025"
+description = "Terminal-based disk analyzer inspired by SpaceSniffer, written in Fortran"
+
+[build]
+auto-executables = true
+auto-tests = true
+auto-examples = true
+link = ["ncurses"]
+
+[install]
+library = false
+
+[[executable]]
+name = "sniffert"
+source-dir = "app"
+main = "main.f90"
+
+[fortran]
+implicit-typing = false
+implicit-external = false
+source-form = "free"
