@@ -6,7 +6,8 @@ module terminal_ui
   private
 
   public :: init_ui, cleanup_ui, render_treemap, handle_input
-  public :: check_terminal_size, draw_box, draw_text
+  public :: check_terminal_size, draw_box, draw_text, format_size
+  public :: get_terminal_dimensions
 
   integer, parameter :: MIN_WIDTH = 40
   integer, parameter :: MIN_HEIGHT = 20
@@ -66,21 +67,14 @@ contains
     type(file_node), intent(in) :: root_node
     character(len=*), intent(in), optional :: selected_path
     integer :: res, max_y, max_x
-    type(rect) :: screen_bounds
 
     res = nc_clear()
 
     ! Get screen dimensions
     call nc_getmaxyx(max_y, max_x)
 
-    ! Set up screen bounds (leave room for status bar)
-    screen_bounds%x = 0
-    screen_bounds%y = 0
-    screen_bounds%width = max_x
-    screen_bounds%height = max_y - 2
-
-    ! Render the tree
-    call render_node(root_node, screen_bounds, 0, selected_path)
+    ! Render the tree using calculated bounds
+    call render_node(root_node, 0, selected_path)
 
     ! Render status bar
     call render_status_bar(max_y - 1, max_x, root_node)
@@ -89,9 +83,8 @@ contains
   end subroutine render_treemap
 
   ! Render a single node and its children
-  recursive subroutine render_node(node, bounds, depth, selected_path)
+  recursive subroutine render_node(node, depth, selected_path)
     type(file_node), intent(in) :: node
-    type(rect), intent(in) :: bounds
     integer, intent(in) :: depth
     character(len=*), intent(in), optional :: selected_path
     integer :: i, res
@@ -104,20 +97,23 @@ contains
       is_selected = (trim(node%path) == trim(selected_path))
     end if
 
-    ! Choose color based on depth and selection
+    ! Choose color based on depth (cycle through available color pairs)
     color_pair_num = mod(depth, 6) + 1
 
-    ! Draw the box for this node
-    if (bounds%width > 2 .and. bounds%height > 2) then
-      call draw_box(bounds, color_pair_num, is_selected)
-      call draw_text(bounds, node%name, is_selected)
+    ! Draw the box for this node using its calculated bounds
+    if (node%bounds%width > 2 .and. node%bounds%height > 1) then
+      call draw_box(node%bounds, color_pair_num, is_selected)
+
+      ! Add text if box is big enough
+      if (node%bounds%width > 4 .and. node%bounds%height > 2) then
+        call draw_text_with_size(node%bounds, node%name, node%size, is_selected)
+      end if
     end if
 
-    ! Render children (if layout is calculated)
+    ! Recursively render children using their calculated bounds
     if (allocated(node%children)) then
       do i = 1, node%num_children
-        ! Note: Child bounds would be calculated by treemap_layout
-        ! For now, this is a placeholder
+        call render_node(node%children(i), depth + 1, selected_path)
       end do
     end if
   end subroutine render_node
@@ -193,6 +189,83 @@ contains
     if (highlighted) res = nc_attroff(A_BOLD)
   end subroutine draw_text
 
+  ! Draw text with size information inside a box
+  subroutine draw_text_with_size(bounds, text, size, highlighted)
+    use iso_fortran_env, only: int64
+    type(rect), intent(in) :: bounds
+    character(len=*), intent(in) :: text
+    integer(int64), intent(in) :: size
+    logical, intent(in) :: highlighted
+    integer :: res, text_x, text_y, max_len
+    character(len=128) :: display_text, size_str
+
+    if (bounds%width <= 4 .or. bounds%height <= 2) return
+
+    max_len = bounds%width - 4
+
+    ! Format size
+    size_str = format_size(size)
+
+    ! If we have room for multiple lines, show name and size separately
+    if (bounds%height >= 4) then
+      ! Show name on top line
+      text_y = bounds%y + 1
+      text_x = bounds%x + 2
+
+      if (len_trim(text) > max_len) then
+        display_text = text(1:max_len)
+      else
+        display_text = trim(text)
+      end if
+
+      res = nc_move(text_y, text_x)
+      if (highlighted) res = nc_attron(A_BOLD)
+      res = nc_addstr(trim(display_text))
+      if (highlighted) res = nc_attroff(A_BOLD)
+
+      ! Show size on next line
+      text_y = bounds%y + 2
+      res = nc_move(text_y, text_x)
+      res = nc_addstr(trim(size_str))
+    else
+      ! Single line: show name only
+      text_y = bounds%y + bounds%height / 2
+      text_x = bounds%x + 2
+
+      if (len_trim(text) > max_len) then
+        display_text = text(1:max_len)
+      else
+        display_text = trim(text)
+      end if
+
+      res = nc_move(text_y, text_x)
+      if (highlighted) res = nc_attron(A_BOLD)
+      res = nc_addstr(trim(display_text))
+      if (highlighted) res = nc_attroff(A_BOLD)
+    end if
+  end subroutine draw_text_with_size
+
+  ! Format file size in human-readable form
+  function format_size(bytes) result(str)
+    use iso_fortran_env, only: int64
+    integer(int64), intent(in) :: bytes
+    character(len=20) :: str
+    real :: size_kb, size_mb, size_gb
+
+    if (bytes < 1024_int64) then
+      write(str, '(I0,A)') bytes, 'B'
+    else if (bytes < 1024_int64 * 1024_int64) then
+      size_kb = real(bytes) / 1024.0
+      write(str, '(F6.2,A)') size_kb, 'KB'
+    else if (bytes < 1024_int64 * 1024_int64 * 1024_int64) then
+      size_mb = real(bytes) / (1024.0 * 1024.0)
+      write(str, '(F6.2,A)') size_mb, 'MB'
+    else
+      size_gb = real(bytes) / (1024.0 * 1024.0 * 1024.0)
+      write(str, '(F6.2,A)') size_gb, 'GB'
+    end if
+  end function format_size
+
   ! Render status bar
   subroutine render_status_bar(y, width, root_node)
     integer, intent(in) :: y, width
@@ -235,5 +308,11 @@ contains
         action = ' '
     end select
   end function handle_input
+
+  ! Get terminal dimensions
+  subroutine get_terminal_dimensions(max_y, max_x)
+    integer, intent(out) :: max_y, max_x
+    call nc_getmaxyx(max_y, max_x)
+  end subroutine get_terminal_dimensions
 
 end module terminal_ui

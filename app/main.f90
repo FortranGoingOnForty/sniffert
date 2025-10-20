@@ -7,10 +7,11 @@ program sniffert
   implicit none
 
   type(file_node) :: root_node
+  type(rect) :: screen_bounds
   character(len=512) :: current_path, selected_path
   character(len=1) :: action
   logical :: running, size_ok
-  integer :: nargs
+  integer :: nargs, max_y, max_x
   character(len=256) :: arg
 
   ! Initialize
@@ -40,6 +41,14 @@ program sniffert
   ! Scan initial directory
   call build_tree(current_path, root_node)
   selected_path = current_path
+
+  ! Calculate treemap layout for initial screen size
+  call get_terminal_dimensions(max_y, max_x)
+  screen_bounds%x = 0
+  screen_bounds%y = 0
+  screen_bounds%width = max_x
+  screen_bounds%height = max_y - 2  ! Leave room for status bar
+  call calculate_treemap(root_node, screen_bounds)
 
   ! Main loop
   do while (running)

@@ -5,21 +5,23 @@ module types
 
   public :: file_node, rect, color_pair
 
+  ! Rectangle for treemap layout
+  type :: rect
+    integer :: x, y      ! Top-left corner
+    integer :: width, height
+  end type rect
+
   ! Represents a file or directory in the tree
   type :: file_node
     character(len=:), allocatable :: name
     character(len=:), allocatable :: path
     integer(int64) :: size
     logical :: is_directory
+    logical :: access_denied  ! True if permission denied during scan
+    type(rect) :: bounds  ! Layout bounds (calculated by treemap algorithm)
     type(file_node), dimension(:), allocatable :: children
     integer :: num_children
   end type file_node
-
-  ! Rectangle for treemap layout
-  type :: rect
-    integer :: x, y      ! Top-left corner
-    integer :: width, height
-  end type rect
 
   ! Color pair for terminal rendering
   type :: color_pair
