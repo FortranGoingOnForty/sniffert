@@ -133,8 +133,8 @@ contains
       ! For leaf nodes, fill the box. For directories, just draw border
       call draw_box(adjusted_bounds, color_pair_num, is_selected, is_leaf)
 
-      ! Add text if box is big enough
-      if (adjusted_bounds%width > 4 .and. adjusted_bounds%height > 2) then
+      ! Add text if box is big enough (matches layout minimums)
+      if (adjusted_bounds%width >= 10 .and. adjusted_bounds%height >= 3) then
         call draw_text_with_size(adjusted_bounds, node%name, node%size, is_selected)
       end if
     end if

@@ -70,7 +70,8 @@ contains
       row_end = find_best_row(nodes(row_start:num_nodes), &
                              num_nodes - row_start + 1, &
                              remaining_bounds, &
-                             layout_horizontal)
+                             layout_horizontal, &
+                             scale_factor)
       row_end = row_start + row_end - 1
 
       ! Calculate row area
@@ -109,11 +110,12 @@ contains
   end subroutine squarify
 
   ! Find best row: add items while worst aspect ratio improves
-  function find_best_row(nodes, num_nodes, bounds, horizontal) result(row_size)
+  function find_best_row(nodes, num_nodes, bounds, horizontal, scale_factor) result(row_size)
     type(file_node), dimension(:), intent(in) :: nodes
     integer, intent(in) :: num_nodes
     type(rect), intent(in) :: bounds
     logical, intent(in) :: horizontal
+    real(real64), intent(in) :: scale_factor
     integer :: row_size
 
     real(real64) :: current_area, new_area
@@ -128,36 +130,38 @@ contains
     row_size = 1
     current_area = real(nodes(1)%size, real64)
     current_worst = calc_worst_aspect_ratio(nodes(1:1), 1, bounds, &
-                                            horizontal, current_area)
+                                            horizontal, current_area, scale_factor)
 
     ! Try adding items while aspect ratio improves
     do i = 2, num_nodes
       new_area = current_area + real(nodes(i)%size, real64)
       new_worst = calc_worst_aspect_ratio(nodes(1:i), i, bounds, &
-                                          horizontal, new_area)
+                                          horizontal, new_area, scale_factor)
 
-      if (new_worst <= current_worst) then
-        ! Aspect ratio improved or stayed same, add to row
+      ! Bias toward adding more items (better grid layouts)
+      ! Accept slightly worse aspect ratios to group items together
+      if (new_worst <= current_worst * 1.5) then
+        ! Aspect ratio acceptable (within 50% tolerance), add to row
         row_size = i
         current_area = new_area
         current_worst = new_worst
       else
-        ! Aspect ratio got worse, stop here
+        ! Aspect ratio too bad, stop here
         exit
       end if
     end do
   end function find_best_row
 
   ! Calculate worst aspect ratio for a row of items
-  function calc_worst_aspect_ratio(nodes, num_nodes, bounds, horizontal, row_area) result(worst)
+  function calc_worst_aspect_ratio(nodes, num_nodes, bounds, horizontal, row_area, scale_factor) result(worst)
     type(file_node), dimension(:), intent(in) :: nodes
     integer, intent(in) :: num_nodes
     type(rect), intent(in) :: bounds
     logical, intent(in) :: horizontal
-    real(real64), intent(in) :: row_area
+    real(real64), intent(in) :: row_area, scale_factor
     real :: worst
 
-    real(real64) :: row_dim, other_dim, item_dim
+    real(real64) :: row_dim, other_dim, item_dim, row_pixel_area
     real :: item_aspect
     integer :: i
 
@@ -168,6 +172,9 @@ contains
       return
     end if
 
+    ! Convert row area from bytes to pixels using scale factor
+    row_pixel_area = row_area * scale_factor
+
     if (horizontal) then
       ! Horizontal row: height is fixed, widths vary
       other_dim = real(bounds%width, real64)
@@ -175,10 +182,11 @@ contains
         worst = huge(1.0)
         return
       end if
-      row_dim = row_area / other_dim  ! Height of row
+      row_dim = row_pixel_area / other_dim  ! Height of row in PIXELS
 
       do i = 1, num_nodes
-        item_dim = real(nodes(i)%size, real64) / row_dim  ! Width of item
+        ! Convert item size to pixels and calculate width
+        item_dim = (real(nodes(i)%size, real64) * scale_factor) / row_dim
         item_aspect = aspect_ratio(int(item_dim), int(row_dim))
         worst = max(worst, item_aspect)
       end do
@@ -189,10 +197,11 @@ contains
         worst = huge(1.0)
         return
       end if
-      row_dim = row_area / other_dim  ! Width of row
+      row_dim = row_pixel_area / other_dim  ! Width of row in PIXELS
 
       do i = 1, num_nodes
-        item_dim = real(nodes(i)%size, real64) / row_dim  ! Height of item
+        ! Convert item size to pixels and calculate height
+        item_dim = (real(nodes(i)%size, real64) * scale_factor) / row_dim
         item_aspect = aspect_ratio(int(row_dim), int(item_dim))
         worst = max(worst, item_aspect)
       end do
@@ -207,8 +216,9 @@ contains
     real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
-    integer :: i, x_offset, item_width, remaining_width, min_height
+    integer :: i, x_offset, item_width, remaining_width
     real(real64) :: row_height, row_pixel_area
+    integer, parameter :: MIN_HEIGHT = 3  ! Minimum to show text: 2 content lines + borders
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
@@ -220,13 +230,10 @@ contains
       row_height = 0.0_real64
     end if
 
-    ! Use minimum of 2 for tiny calculated heights (let algorithm decide size)
-    min_height = 2
-
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
     row_bounds%width = bounds%width
-    row_bounds%height = max(min_height, int(row_height))
+    row_bounds%height = max(MIN_HEIGHT, int(row_height))
 
     x_offset = bounds%x
     remaining_width = bounds%width
@@ -239,8 +246,8 @@ contains
         item_width = 0
       end if
 
-      ! Enforce minimum width (let rendering decide if text fits)
-      item_width = max(2, item_width)
+      ! Enforce minimum width for text (need space for filename)
+      item_width = max(10, item_width)  ! 2 borders + 8 chars minimum
 
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
@@ -259,8 +266,9 @@ contains
     real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
-    integer :: i, y_offset, item_height, remaining_height, min_width
+    integer :: i, y_offset, item_height, remaining_height
     real(real64) :: row_width, row_pixel_area
+    integer, parameter :: MIN_WIDTH = 10  ! Minimum to show text: 2 borders + 8 chars
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
@@ -272,12 +280,9 @@ contains
       row_width = 0.0_real64
     end if
 
-    ! Use minimum of 2 (let rendering decide if text fits)
-    min_width = 2
-
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
-    row_bounds%width = max(min_width, int(row_width))
+    row_bounds%width = max(MIN_WIDTH, int(row_width))
     row_bounds%height = bounds%height
 
     y_offset = bounds%y
@@ -291,8 +296,8 @@ contains
         item_height = 0
       end if
 
-      ! Enforce minimum height (let rendering decide if text fits)
-      item_height = max(2, item_height)
+      ! Enforce minimum height for text (2 content lines + borders)
+      item_height = max(3, item_height)
 
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset
