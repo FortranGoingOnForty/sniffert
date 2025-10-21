@@ -138,10 +138,16 @@ contains
       new_worst = calc_worst_aspect_ratio(nodes(1:i), i, bounds, &
                                           horizontal, new_area, scale_factor)
 
-      ! Bias toward adding more items (better grid layouts)
-      ! Accept slightly worse aspect ratios to group items together
-      if (new_worst <= current_worst * 1.5) then
-        ! Aspect ratio acceptable (within 50% tolerance), add to row
+      ! Limit items per row to prevent too many tiny boxes
+      ! Check if adding this item would make boxes too small
+      if (horizontal .and. bounds%width / i < 10) then
+        ! Would make boxes < 10 chars wide, stop here
+        exit
+      else if (i > 5) then
+        ! Max 5 items per row for readability (was 6, reducing further)
+        exit
+      else if (new_worst <= current_worst * 1.2) then
+        ! Aspect ratio acceptable (within 20% tolerance), add to row
         row_size = i
         current_area = new_area
         current_worst = new_worst
@@ -238,6 +244,7 @@ contains
     x_offset = bounds%x
     remaining_width = bounds%width
 
+    ! First pass: calculate ideal widths with minimums
     do i = 1, num_nodes
       if (row_height > 0.0_real64) then
         ! Calculate width: (item_size / row_total_size) * row_width
@@ -246,15 +253,41 @@ contains
         item_width = 0
       end if
 
-      ! Enforce minimum width for text (need space for filename)
-      item_width = max(10, item_width)  ! 2 borders + 8 chars minimum
+      ! Enforce minimum width for text
+      item_width = max(10, item_width)
+      nodes(i)%bounds%width = item_width
+    end do
 
+    ! Second pass: adjust if total width exceeds bounds
+    ! Calculate total width needed
+    item_width = 0
+    do i = 1, num_nodes
+      item_width = item_width + nodes(i)%bounds%width
+    end do
+
+    ! If overflow, scale all widths proportionally to fit
+    if (item_width > bounds%width) then
+      do i = 1, num_nodes
+        ! Scale width down proportionally (keep minimum for text)
+        nodes(i)%bounds%width = max(10, &
+          int((real(nodes(i)%bounds%width, real64) / real(item_width, real64)) * real(bounds%width, real64)))
+      end do
+    end if
+
+    ! Third pass: assign x positions and handle rounding
+    do i = 1, num_nodes
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
-      nodes(i)%bounds%width = item_width
       nodes(i)%bounds%height = row_bounds%height
 
-      x_offset = x_offset + item_width
+      if (i == num_nodes) then
+        ! Last item gets remaining width to avoid rounding gaps
+        remaining_width = bounds%x + bounds%width - x_offset
+        ! Ensure last item has at least minimum width
+        nodes(i)%bounds%width = max(2, remaining_width)
+      end if
+
+      x_offset = x_offset + nodes(i)%bounds%width
     end do
   end subroutine layout_row_horizontal
 
@@ -288,6 +321,7 @@ contains
     y_offset = bounds%y
     remaining_height = bounds%height
 
+    ! First pass: calculate ideal heights with minimums
     do i = 1, num_nodes
       if (row_width > 0.0_real64) then
         ! Calculate height: (item_size / row_total_size) * row_height
@@ -296,15 +330,35 @@ contains
         item_height = 0
       end if
 
-      ! Enforce minimum height for text (2 content lines + borders)
+      ! Enforce minimum height for text
       item_height = max(3, item_height)
+      nodes(i)%bounds%height = item_height
+    end do
 
+    ! Second pass: adjust if total height exceeds bounds (allow overflow for scrolling)
+    ! Calculate total height needed
+    item_height = 0
+    do i = 1, num_nodes
+      item_height = item_height + nodes(i)%bounds%height
+    end do
+
+    ! Note: For vertical, we allow overflow (scrolling), but scale if severely over
+    ! to prevent extremely tall boxes
+    if (item_height > bounds%height * 10) then
+      do i = 1, num_nodes
+        ! Scale height down proportionally
+        nodes(i)%bounds%height = max(2, &
+          int((real(nodes(i)%bounds%height, real64) / real(item_height, real64)) * real(bounds%height * 10, real64)))
+      end do
+    end if
+
+    ! Third pass: assign y positions
+    do i = 1, num_nodes
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset
       nodes(i)%bounds%width = row_bounds%width
-      nodes(i)%bounds%height = item_height
 
-      y_offset = y_offset + item_height
+      y_offset = y_offset + nodes(i)%bounds%height
     end do
   end subroutine layout_row_vertical
 
