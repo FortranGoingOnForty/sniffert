@@ -453,12 +453,12 @@ contains
       ! Show scroll position if content overflows
       if (visible_count < total_count) then
         write(status_text, '(A,A,A,I0,A,I0,A,I0,A,I0,A)') &
-          'Arrows/PgUp/PgDn:Navigate [c]hdir [q]uit | ', &
+          'Arrows/PgUp/PgDn:Navigate [c]hdir [d]el [q]uit | ', &
           trim(root_node%path), ' (', visible_count, ' of ', total_count, &
           ' files) [', view_start, '-', view_end, ' lines]'
       else
         write(status_text, '(A,A,A,I0,A,I0,A)') &
-          'Arrows/PgUp/PgDn:Navigate [c]hdir [q]uit | ', &
+          'Arrows/PgUp/PgDn:Navigate [c]hdir [d]el [q]uit | ', &
           trim(root_node%path), ' [', view_start, '-', view_end, ' lines]'
       end if
     else

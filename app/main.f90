@@ -186,7 +186,7 @@ program sniffert
       screen_bounds%x = 0
       screen_bounds%y = 0
       screen_bounds%width = max_x
-      screen_bounds%height = max_y - 2
+      screen_bounds%height = max_y - 1  ! Leave room for status bar at bottom line
       call calculate_treemap(root_node, screen_bounds)
 
       ! Recalculate total height
