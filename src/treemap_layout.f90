@@ -50,8 +50,9 @@ contains
     type(rect) :: remaining_bounds, row_bounds
     logical :: layout_horizontal
 
-    if (num_nodes == 0 .or. bounds%width <= 0 .or. bounds%height <= 0) return
-    if (total_size == 0) return
+    ! Only check for invalid inputs, not space constraints (we support scrolling!)
+    if (num_nodes == 0 .or. total_size == 0) return
+    if (bounds%width <= 0 .or. bounds%height <= 0) return
 
     ! Calculate scaling factor: maps bytes to pixels²
     total_pixel_area = real(bounds%width, real64) * real(bounds%height, real64)
@@ -206,24 +207,26 @@ contains
     real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
-    integer :: i, x_offset, item_width, remaining_width
+    integer :: i, x_offset, item_width, remaining_width, min_height
     real(real64) :: row_height, row_pixel_area
-    integer, parameter :: MIN_HEIGHT = 4  ! Need 4 lines for name + size
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
 
-    ! Calculate row height with minimum
+    ! Calculate row height
     if (bounds%width > 0) then
       row_height = row_pixel_area / real(bounds%width, real64)
     else
       row_height = 0.0_real64
     end if
 
+    ! Use minimum of 2 for tiny calculated heights (let algorithm decide size)
+    min_height = 2
+
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
     row_bounds%width = bounds%width
-    row_bounds%height = max(MIN_HEIGHT, int(row_height))
+    row_bounds%height = max(min_height, int(row_height))
 
     x_offset = bounds%x
     remaining_width = bounds%width
@@ -236,8 +239,8 @@ contains
         item_width = 0
       end if
 
-      ! Enforce minimum width for text visibility (need 5 for borders + text)
-      item_width = max(8, item_width)  ! 2 borders + 2 padding + 4 chars min
+      ! Enforce minimum width (let rendering decide if text fits)
+      item_width = max(2, item_width)
 
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
@@ -256,23 +259,25 @@ contains
     real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
-    integer :: i, y_offset, item_height, remaining_height
+    integer :: i, y_offset, item_height, remaining_height, min_width
     real(real64) :: row_width, row_pixel_area
-    integer, parameter :: MIN_WIDTH = 8  ! Need 8 chars for borders + text
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
 
-    ! Calculate row width with minimum
+    ! Calculate row width
     if (bounds%height > 0) then
       row_width = row_pixel_area / real(bounds%height, real64)
     else
       row_width = 0.0_real64
     end if
 
+    ! Use minimum of 2 (let rendering decide if text fits)
+    min_width = 2
+
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
-    row_bounds%width = max(MIN_WIDTH, int(row_width))
+    row_bounds%width = max(min_width, int(row_width))
     row_bounds%height = bounds%height
 
     y_offset = bounds%y
@@ -286,8 +291,8 @@ contains
         item_height = 0
       end if
 
-      ! Enforce minimum height for text visibility (need 4 for borders + name + size)
-      item_height = max(4, item_height)
+      ! Enforce minimum height (let rendering decide if text fits)
+      item_height = max(2, item_height)
 
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset
