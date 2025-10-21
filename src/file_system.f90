@@ -5,6 +5,7 @@ module file_system
   private
 
   public :: get_file_size, is_directory, is_symlink, list_directory, get_path_separator, is_running_as_root
+  public :: delete_path
 
   ! POSIX stat structure (simplified)
   type, bind(c) :: c_stat
@@ -164,5 +165,32 @@ contains
     result = is_running_as_root_helper()
     is_root = (result /= 0)
   end function is_running_as_root
+
+  ! Delete a file or directory, trying 'trash' command first, then rm -rf
+  function delete_path(path) result(success)
+    character(len=*), intent(in) :: path
+    logical :: success
+    integer :: exit_code
+    character(len=1024) :: command
+
+    ! First try using 'trash' command (safer)
+    write(command, '(A,A,A)') 'trash "', trim(path), '" 2>/dev/null'
+    call execute_command_line(trim(command), exitstat=exit_code)
+
+    if (exit_code == 0) then
+      success = .true.
+      return
+    end if
+
+    ! Trash not available or failed, try rm -rf
+    if (is_directory(path)) then
+      write(command, '(A,A,A)') 'rm -rf "', trim(path), '"'
+    else
+      write(command, '(A,A,A)') 'rm -f "', trim(path), '"'
+    end if
+
+    call execute_command_line(trim(command), exitstat=exit_code)
+    success = (exit_code == 0)
+  end function delete_path
 
 end module file_system

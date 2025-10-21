@@ -1,18 +1,19 @@
 program sniffert
   use types
-  use file_system, only: is_directory, is_running_as_root
+  use file_system, only: is_directory, is_running_as_root, delete_path
   use disk_scanner
   use treemap_layout
-  use terminal_ui
+  use terminal_ui, only: init_ui, cleanup_ui, render_treemap, handle_input, &
+                         check_terminal_size, get_terminal_dimensions, confirm_action
   use navigation
   implicit none
 
   type(file_node) :: root_node
   type(rect) :: screen_bounds
   type(selection_state) :: selection
-  character(len=512) :: current_path
+  character(len=512) :: current_path, selected_path, prompt_msg
   character(len=1) :: action
-  logical :: running, size_ok, needs_rescan
+  logical :: running, size_ok, needs_rescan, confirmed, delete_success
   integer :: nargs, max_y, max_x
   integer :: scroll_offset, total_height
   character(len=256) :: arg
@@ -118,9 +119,28 @@ program sniffert
         end if
 
       case ('d')
-        ! Delete (stub - needs confirmation dialog and implementation)
-        ! Would show warning and delete selected directory
-        continue
+        ! Delete - show confirmation and delete selected file/directory
+        if (selection%depth >= 0) then
+          ! Get the selected path
+          selected_path = get_selected_path(selection)
+
+          ! Build confirmation prompt
+          write(prompt_msg, '(A,A)') 'Delete "', trim(selected_path) // '"'
+
+          ! Show confirmation dialog
+          confirmed = confirm_action(trim(prompt_msg))
+
+          if (confirmed) then
+            ! Attempt to delete (tries trash first, then rm)
+            delete_success = delete_path(trim(selected_path))
+
+            if (delete_success) then
+              ! Deletion successful - trigger rescan from current directory
+              needs_rescan = .true.
+            end if
+            ! If deletion failed, just continue (user will see file still there)
+          end if
+        end if
 
       case ('u')
         ! Up arrow - previous sibling

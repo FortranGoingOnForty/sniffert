@@ -7,7 +7,7 @@ module terminal_ui
 
   public :: init_ui, cleanup_ui, render_treemap, handle_input
   public :: check_terminal_size, draw_box, draw_text, format_size
-  public :: get_terminal_dimensions
+  public :: get_terminal_dimensions, confirm_action
 
   integer, parameter :: MIN_WIDTH = 40
   integer, parameter :: MIN_HEIGHT = 20
@@ -531,6 +531,48 @@ contains
         action = ' '
     end select
   end function handle_input
+
+  ! Show confirmation prompt and wait for y/n response
+  function confirm_action(prompt_msg) result(confirmed)
+    character(len=*), intent(in) :: prompt_msg
+    logical :: confirmed
+    integer :: ch, max_y, max_x, res, i
+    character(len=512) :: full_prompt
+
+    ! Get screen dimensions
+    call nc_getmaxyx(max_y, max_x)
+
+    ! Build prompt with y/n suffix
+    write(full_prompt, '(A,A)') trim(prompt_msg), ' (y/n)? '
+
+    ! Pad to full width
+    do i = len_trim(full_prompt) + 1, min(max_x, len(full_prompt))
+      full_prompt(i:i) = ' '
+    end do
+
+    ! Display prompt at bottom of screen
+    res = nc_move(max_y - 1, 0)
+    res = nc_attron(A_REVERSE)
+    res = nc_attron(A_BOLD)
+    res = nc_addstr(full_prompt(1:min(max_x, len(full_prompt))))
+    res = nc_attroff(A_BOLD)
+    res = nc_attroff(A_REVERSE)
+    res = nc_refresh()
+
+    ! Wait for y/n input
+    confirmed = .false.
+    do
+      ch = nc_getch()
+      if (ch == ichar('y') .or. ch == ichar('Y')) then
+        confirmed = .true.
+        exit
+      else if (ch == ichar('n') .or. ch == ichar('N')) then
+        confirmed = .false.
+        exit
+      end if
+      ! Ignore other keys, keep waiting
+    end do
+  end function confirm_action
 
   ! Get terminal dimensions
   subroutine get_terminal_dimensions(max_y, max_x)
