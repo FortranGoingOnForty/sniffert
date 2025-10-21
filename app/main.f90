@@ -13,7 +13,7 @@ program sniffert
   character(len=512) :: current_path
   character(len=1) :: action
   logical :: running, size_ok, needs_rescan
-  integer :: nargs, max_y, max_x, i
+  integer :: nargs, max_y, max_x
   character(len=256) :: arg
 
   ! Initialize

@@ -46,12 +46,16 @@ contains
     integer(int64), intent(in) :: total_size
 
     integer :: i, row_start, row_end
-    real(real64) :: remaining_area, row_area
+    real(real64) :: remaining_area, row_area, scale_factor, total_pixel_area
     type(rect) :: remaining_bounds, row_bounds
     logical :: layout_horizontal
 
     if (num_nodes == 0 .or. bounds%width <= 0 .or. bounds%height <= 0) return
     if (total_size == 0) return
+
+    ! Calculate scaling factor: maps bytes to pixels²
+    total_pixel_area = real(bounds%width, real64) * real(bounds%height, real64)
+    scale_factor = total_pixel_area / real(total_size, real64)
 
     ! Determine layout direction (use shorter dimension for rows)
     layout_horizontal = bounds%width >= bounds%height
@@ -81,6 +85,7 @@ contains
                                    row_end - row_start + 1, &
                                    remaining_bounds, &
                                    row_area, &
+                                   scale_factor, &
                                    row_bounds)
         ! Update remaining bounds (move down)
         remaining_bounds%y = remaining_bounds%y + row_bounds%height
@@ -91,6 +96,7 @@ contains
                                 row_end - row_start + 1, &
                                 remaining_bounds, &
                                 row_area, &
+                                scale_factor, &
                                 row_bounds)
         ! Update remaining bounds (move right)
         remaining_bounds%x = remaining_bounds%x + row_bounds%width
@@ -193,19 +199,22 @@ contains
   end function calc_worst_aspect_ratio
 
   ! Layout a horizontal row (items left-to-right)
-  subroutine layout_row_horizontal(nodes, num_nodes, bounds, row_area, row_bounds)
+  subroutine layout_row_horizontal(nodes, num_nodes, bounds, row_area, scale_factor, row_bounds)
     type(file_node), dimension(:), intent(inout) :: nodes
     integer, intent(in) :: num_nodes
     type(rect), intent(in) :: bounds
-    real(real64), intent(in) :: row_area
+    real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
     integer :: i, x_offset, item_width, remaining_width
-    real(real64) :: row_height
+    real(real64) :: row_height, row_pixel_area
+
+    ! Convert row area from bytes to pixels² using scale factor
+    row_pixel_area = row_area * scale_factor
 
     ! Calculate row height
     if (bounds%width > 0) then
-      row_height = row_area / real(bounds%width, real64)
+      row_height = row_pixel_area / real(bounds%width, real64)
     else
       row_height = 0.0_real64
     end if
@@ -220,7 +229,8 @@ contains
 
     do i = 1, num_nodes
       if (row_height > 0.0_real64) then
-        item_width = int(real(nodes(i)%size, real64) / row_height)
+        ! Calculate width: (item_size / row_total_size) * row_width
+        item_width = int((real(nodes(i)%size, real64) / row_area) * real(bounds%width, real64))
       else
         item_width = 0
       end if
@@ -243,19 +253,22 @@ contains
   end subroutine layout_row_horizontal
 
   ! Layout a vertical row (items top-to-bottom)
-  subroutine layout_row_vertical(nodes, num_nodes, bounds, row_area, row_bounds)
+  subroutine layout_row_vertical(nodes, num_nodes, bounds, row_area, scale_factor, row_bounds)
     type(file_node), dimension(:), intent(inout) :: nodes
     integer, intent(in) :: num_nodes
     type(rect), intent(in) :: bounds
-    real(real64), intent(in) :: row_area
+    real(real64), intent(in) :: row_area, scale_factor
     type(rect), intent(out) :: row_bounds
 
     integer :: i, y_offset, item_height, remaining_height
-    real(real64) :: row_width
+    real(real64) :: row_width, row_pixel_area
+
+    ! Convert row area from bytes to pixels² using scale factor
+    row_pixel_area = row_area * scale_factor
 
     ! Calculate row width
     if (bounds%height > 0) then
-      row_width = row_area / real(bounds%height, real64)
+      row_width = row_pixel_area / real(bounds%height, real64)
     else
       row_width = 0.0_real64
     end if
@@ -270,7 +283,8 @@ contains
 
     do i = 1, num_nodes
       if (row_width > 0.0_real64) then
-        item_height = int(real(nodes(i)%size, real64) / row_width)
+        ! Calculate height: (item_size / row_total_size) * row_height
+        item_height = int((real(nodes(i)%size, real64) / row_area) * real(bounds%height, real64))
       else
         item_height = 0
       end if
