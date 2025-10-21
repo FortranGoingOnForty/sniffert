@@ -88,10 +88,12 @@ contains
     type(file_node), intent(in) :: node
     integer, intent(in) :: depth, scroll_offset
     character(len=*), intent(in), optional :: selected_path
-    integer :: i, res, max_y, max_x
+    integer :: i, res, max_y, max_x, ios
+    integer, save :: debug_unit = 0
     logical :: is_selected, is_leaf
     integer :: color_pair_num
     type(rect) :: adjusted_bounds
+    logical, save :: debug_opened = .false.
 
     ! Check if this node is selected
     is_selected = .false.
@@ -121,11 +123,43 @@ contains
       return
     end if
 
+    ! Open debug file
+    if (.not. debug_opened .and. depth == 1) then
+      open(newunit=debug_unit, file='/tmp/render_debug.log', status='replace', iostat=ios)
+      if (ios == 0) then
+        debug_opened = .true.
+        write(debug_unit, '(A)') '=== Render Debug (Comprehensive) ==='
+        flush(debug_unit)
+      end if
+    end if
+
+    ! Log ALL render attempts when scrolling (before any clipping)
+    if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
+      write(debug_unit, '(A,I3,A,I4,A,I4,A,I3,A)') &
+        'RENDER: scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
+        ' adj_y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
+        ' "' // trim(node%name) // '"'
+      flush(debug_unit)
+    end if
+
     ! Clip bounds to viewport (ncurses cannot render at negative coordinates)
     if (adjusted_bounds%y < 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth == 1) then
+        write(debug_unit, '(A,I3,A,I3,A,I3,A)') &
+          'BEFORE CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
+          ' scroll=', scroll_offset, ' "' // trim(node%name) // '"'
+        flush(debug_unit)
+      end if
+
       ! Box starts above viewport, clip the top portion
       adjusted_bounds%height = adjusted_bounds%height + adjusted_bounds%y
       adjusted_bounds%y = 0
+
+      if (debug_opened .and. debug_unit /= 0 .and. depth == 1) then
+        write(debug_unit, '(A,I3,A,I3)') &
+          '  AFTER CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height
+        flush(debug_unit)
+      end if
     end if
 
     ! Clip bottom if extends below viewport
@@ -140,8 +174,16 @@ contains
     color_pair_num = mod(depth, 6) + 1
 
     ! Draw the box using clipped adjusted bounds
-    if (adjusted_bounds%width >= 2 .and. adjusted_bounds%height >= 2 .and. &
+    ! Note: After clipping, height can be 1 or even less, which is still valid
+    if (adjusted_bounds%width >= 1 .and. adjusted_bounds%height >= 1 .and. &
         adjusted_bounds%y < max_y - 2) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I4,A,I3,A)') &
+          '  → DRAW_BOX at y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
+          ' "' // trim(node%name) // '"'
+        flush(debug_unit)
+      end if
+
       ! For leaf nodes, fill the box. For directories, just draw border
       call draw_box(adjusted_bounds, color_pair_num, is_selected, is_leaf)
 
