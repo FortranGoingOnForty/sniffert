@@ -113,33 +113,42 @@ contains
     ! Get screen dimensions for clipping
     call nc_getmaxyx(max_y, max_x)
 
-    ! Skip if completely above viewport
-    if (adjusted_bounds%y + adjusted_bounds%height <= 0) then
-      return
-    end if
-
-    ! Skip if completely below viewport
-    if (adjusted_bounds%y >= max_y - 2) then
-      return
-    end if
-
-    ! Open debug file
+    ! Open debug file BEFORE any viewport checks
     if (.not. debug_opened .and. depth == 1) then
       open(newunit=debug_unit, file='/tmp/render_debug.log', status='replace', iostat=ios)
       if (ios == 0) then
         debug_opened = .true.
-        write(debug_unit, '(A)') '=== Render Debug (Comprehensive) ==='
+        write(debug_unit, '(A,I4,A,I4)') '=== Render Debug | max_y=', max_y, ' max_x=', max_x
         flush(debug_unit)
       end if
     end if
 
-    ! Log ALL render attempts when scrolling (before any clipping)
+    ! Log ALL render attempts when scrolling (BEFORE viewport checks)
     if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
-      write(debug_unit, '(A,I3,A,I4,A,I4,A,I3,A)') &
+      write(debug_unit, '(A,I3,A,I4,A,I4,A,I3,A,I4,A)') &
         'RENDER: scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
         ' adj_y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
-        ' "' // trim(node%name) // '"'
+        ' max_y=', max_y, ' "' // trim(node%name) // '"'
       flush(debug_unit)
+    end if
+
+    ! Skip if completely above viewport
+    if (adjusted_bounds%y + adjusted_bounds%height <= 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A)') '  → SKIPPED: above viewport'
+        flush(debug_unit)
+      end if
+      return
+    end if
+
+    ! Skip if completely below viewport
+    ! Status bar is at max_y-1, so content can use lines 0 to max_y-2
+    if (adjusted_bounds%y >= max_y - 1) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I4,A,I4)') '  → SKIPPED: below viewport (y=', adjusted_bounds%y, ' >= max_y-1=', max_y - 1, ')'
+        flush(debug_unit)
+      end if
+      return
     end if
 
     ! Clip bounds to viewport (ncurses cannot render at negative coordinates)
@@ -163,8 +172,9 @@ contains
     end if
 
     ! Clip bottom if extends below viewport
-    if (adjusted_bounds%y + adjusted_bounds%height > max_y - 2) then
-      adjusted_bounds%height = max_y - 2 - adjusted_bounds%y
+    ! Status bar is at max_y-1, so content can use lines 0 to max_y-2
+    if (adjusted_bounds%y + adjusted_bounds%height > max_y - 1) then
+      adjusted_bounds%height = max_y - 1 - adjusted_bounds%y
     end if
 
     ! Check if this is a leaf node (file or empty directory)
@@ -176,7 +186,7 @@ contains
     ! Draw the box using clipped adjusted bounds
     ! Note: After clipping, height can be 1 or even less, which is still valid
     if (adjusted_bounds%width >= 1 .and. adjusted_bounds%height >= 1 .and. &
-        adjusted_bounds%y < max_y - 2) then
+        adjusted_bounds%y < max_y - 1) then
       if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
         write(debug_unit, '(A,I4,A,I3,A)') &
           '  → DRAW_BOX at y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
