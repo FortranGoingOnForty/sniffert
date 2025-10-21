@@ -140,8 +140,10 @@ contains
     end if
 
     ! Recursively render children with same scroll offset
+    ! Only show children if box is large enough to meaningfully display them
+    ! This prevents cluttered rendering in large directories with many small boxes
     if (allocated(node%children) .and. &
-        node%bounds%width >= 4 .and. node%bounds%height >= 4) then
+        node%bounds%width >= 40 .and. node%bounds%height >= 10) then
       do i = 1, node%num_children
         call render_node(node%children(i), depth + 1, scroll_offset, selected_path)
       end do
