@@ -91,7 +91,10 @@ contains
                                    row_bounds)
         ! Update remaining bounds (move down)
         remaining_bounds%y = remaining_bounds%y + row_bounds%height
-        remaining_bounds%height = remaining_bounds%height - row_bounds%height
+        remaining_bounds%height = max(1, remaining_bounds%height - row_bounds%height)
+
+        ! Note: remaining_bounds%height might go to 1 (minimum), but that's OK
+        ! The layout_row_horizontal will still calculate proper row heights based on scale_factor
       else
         ! Vertical row (items placed top-to-bottom)
         call layout_row_vertical(nodes(row_start:row_end), &
@@ -102,7 +105,7 @@ contains
                                 row_bounds)
         ! Update remaining bounds (move right)
         remaining_bounds%x = remaining_bounds%x + row_bounds%width
-        remaining_bounds%width = remaining_bounds%width - row_bounds%width
+        remaining_bounds%width = max(1, remaining_bounds%width - row_bounds%width)
       end if
 
       row_start = row_end + 1
