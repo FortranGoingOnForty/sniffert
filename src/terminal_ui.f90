@@ -111,8 +111,8 @@ contains
     ! Get screen dimensions for clipping
     call nc_getmaxyx(max_y, max_x)
 
-    ! Skip if above viewport (negative Y - ncurses cannot render at negative coordinates)
-    if (adjusted_bounds%y < 0) then
+    ! Skip if completely above viewport
+    if (adjusted_bounds%y + adjusted_bounds%height <= 0) then
       return
     end if
 
@@ -121,13 +121,25 @@ contains
       return
     end if
 
+    ! Clip bounds to viewport (ncurses cannot render at negative coordinates)
+    if (adjusted_bounds%y < 0) then
+      ! Box starts above viewport, clip the top portion
+      adjusted_bounds%height = adjusted_bounds%height + adjusted_bounds%y
+      adjusted_bounds%y = 0
+    end if
+
+    ! Clip bottom if extends below viewport
+    if (adjusted_bounds%y + adjusted_bounds%height > max_y - 2) then
+      adjusted_bounds%height = max_y - 2 - adjusted_bounds%y
+    end if
+
     ! Check if this is a leaf node (file or empty directory)
     is_leaf = (.not. allocated(node%children)) .or. (node%num_children == 0)
 
     ! Choose color based on depth (cycle through available color pairs)
     color_pair_num = mod(depth, 6) + 1
 
-    ! Draw the box using adjusted bounds
+    ! Draw the box using clipped adjusted bounds
     if (adjusted_bounds%width >= 2 .and. adjusted_bounds%height >= 2 .and. &
         adjusted_bounds%y < max_y - 2) then
       ! For leaf nodes, fill the box. For directories, just draw border
