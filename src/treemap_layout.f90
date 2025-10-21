@@ -66,6 +66,7 @@ contains
     row_start = 1
 
     do while (row_start <= num_nodes)
+
       ! Find best row: add items while aspect ratio improves
       row_end = find_best_row(nodes(row_start:num_nodes), &
                              num_nodes - row_start + 1, &

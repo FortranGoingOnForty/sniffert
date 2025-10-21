@@ -111,8 +111,8 @@ contains
     ! Get screen dimensions for clipping
     call nc_getmaxyx(max_y, max_x)
 
-    ! Skip if completely above viewport
-    if (adjusted_bounds%y + adjusted_bounds%height < 0) then
+    ! Skip if above viewport (negative Y - ncurses cannot render at negative coordinates)
+    if (adjusted_bounds%y < 0) then
       return
     end if
 
