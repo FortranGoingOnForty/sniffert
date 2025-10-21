@@ -78,7 +78,7 @@ contains
     call render_node(root_node, 0, scroll_offset, selected_path)
 
     ! Render status bar with scroll info
-    call render_status_bar(max_y - 1, max_x, root_node, scroll_offset, total_height, max_y - 2)
+    call render_status_bar(max_y - 1, max_x, root_node, scroll_offset, total_height, max_y - 1)
 
     res = nc_refresh()
   end subroutine render_treemap
@@ -113,8 +113,11 @@ contains
     ! Get screen dimensions for clipping
     call nc_getmaxyx(max_y, max_x)
 
+    ! Check if this is a leaf node (file or empty directory) - needed for viewport culling
+    is_leaf = (.not. allocated(node%children)) .or. (node%num_children == 0)
+
     ! Open debug file BEFORE any viewport checks
-    if (.not. debug_opened .and. depth == 1) then
+    if (.not. debug_opened .and. depth <= 1) then
       open(newunit=debug_unit, file='/tmp/render_debug.log', status='replace', iostat=ios)
       if (ios == 0) then
         debug_opened = .true.
@@ -124,28 +127,30 @@ contains
     end if
 
     ! Log ALL render attempts when scrolling (BEFORE viewport checks)
-    if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
-      write(debug_unit, '(A,I3,A,I4,A,I4,A,I3,A,I4,A)') &
-        'RENDER: scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
+    ! Include depth=0 (root) and depth=1 (children) to debug recursion issues
+    if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      write(debug_unit, '(A,I1,A,I3,A,I4,A,I4,A,I3,A,I4,A)') &
+        'RENDER d=', depth, ' scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
         ' adj_y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
         ' max_y=', max_y, ' "' // trim(node%name) // '"'
       flush(debug_unit)
     end if
 
-    ! Skip if completely above viewport
-    if (adjusted_bounds%y + adjusted_bounds%height <= 0) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
-        write(debug_unit, '(A)') '  → SKIPPED: above viewport'
+    ! Skip if completely above viewport - BUT ONLY FOR LEAF NODES
+    ! Containers must recurse into children even if the parent box is out of view
+    if (adjusted_bounds%y + adjusted_bounds%height <= 0 .and. is_leaf) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A)') '  → d=', depth, ' SKIPPED: leaf above viewport'
         flush(debug_unit)
       end if
       return
     end if
 
-    ! Skip if completely below viewport
-    ! Status bar is at max_y-1, so content can use lines 0 to max_y-2
-    if (adjusted_bounds%y >= max_y - 1) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
-        write(debug_unit, '(A,I4,A,I4)') '  → SKIPPED: below viewport (y=', adjusted_bounds%y, ' >= max_y-1=', max_y - 1, ')'
+    ! Skip if completely below viewport - BUT ONLY FOR LEAF NODES
+    ! Containers must recurse into children even if the parent box is out of view
+    if (adjusted_bounds%y > max_y - 1 .and. is_leaf) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A,I4,A,I4)') '  → d=', depth, ' SKIPPED: leaf beyond viewport (y=', adjusted_bounds%y, ' > max_y-1=', max_y - 1, ')'
         flush(debug_unit)
       end if
       return
@@ -153,9 +158,9 @@ contains
 
     ! Clip bounds to viewport (ncurses cannot render at negative coordinates)
     if (adjusted_bounds%y < 0) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth == 1) then
-        write(debug_unit, '(A,I3,A,I3,A,I3,A)') &
-          'BEFORE CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1) then
+        write(debug_unit, '(A,I1,A,I3,A,I3,A,I3,A)') &
+          '  d=', depth, ' BEFORE CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
           ' scroll=', scroll_offset, ' "' // trim(node%name) // '"'
         flush(debug_unit)
       end if
@@ -164,32 +169,54 @@ contains
       adjusted_bounds%height = adjusted_bounds%height + adjusted_bounds%y
       adjusted_bounds%y = 0
 
-      if (debug_opened .and. debug_unit /= 0 .and. depth == 1) then
-        write(debug_unit, '(A,I3,A,I3)') &
-          '  AFTER CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1) then
+        write(debug_unit, '(A,I1,A,I3,A,I3)') &
+          '  d=', depth, ' AFTER CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height
         flush(debug_unit)
       end if
     end if
 
-    ! Clip bottom if extends below viewport
-    ! Status bar is at max_y-1, so content can use lines 0 to max_y-2
+    ! Clip bottom if extends beyond content area
+    ! Status bar at max_y-1, so content must end by max_y-2
     if (adjusted_bounds%y + adjusted_bounds%height > max_y - 1) then
-      adjusted_bounds%height = max_y - 1 - adjusted_bounds%y
+      adjusted_bounds%height = max((max_y - 1) - adjusted_bounds%y, 0)
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A,I3)') '  d=', depth, ' BOTTOM CLIP: new_h=', adjusted_bounds%height
+        flush(debug_unit)
+      end if
     end if
 
-    ! Check if this is a leaf node (file or empty directory)
-    is_leaf = (.not. allocated(node%children)) .or. (node%num_children == 0)
+    ! Skip if clipping resulted in invalid dimensions - BUT ONLY FOR LEAF NODES
+    ! Containers with invalid dimensions must still recurse into children
+    if ((adjusted_bounds%width < 1 .or. adjusted_bounds%height < 1) .and. is_leaf) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A,I3,A,I3)') '  → d=', depth, ' SKIPPED: leaf with invalid dims after clip (w=', &
+          adjusted_bounds%width, ' h=', adjusted_bounds%height, ')'
+        flush(debug_unit)
+      end if
+      return
+    end if
+
+    ! For containers with invalid dimensions, don't draw but DO recurse into children
+    if (adjusted_bounds%width < 1 .or. adjusted_bounds%height < 1) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A,I3,A,I3,A)') '  → d=', depth, ' SKIP DRAW (invalid dims w=', &
+          adjusted_bounds%width, ' h=', adjusted_bounds%height, ') but WILL RECURSE'
+        flush(debug_unit)
+      end if
+      ! Don't return - continue to recursion below
+      ! But skip the drawing section by jumping to recursion
+      goto 100
+    end if
 
     ! Choose color based on depth (cycle through available color pairs)
     color_pair_num = mod(depth, 6) + 1
 
     ! Draw the box using clipped adjusted bounds
-    ! Note: After clipping, height can be 1 or even less, which is still valid
-    if (adjusted_bounds%width >= 1 .and. adjusted_bounds%height >= 1 .and. &
-        adjusted_bounds%y < max_y - 1) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth == 1 .and. scroll_offset > 0) then
-        write(debug_unit, '(A,I4,A,I3,A)') &
-          '  → DRAW_BOX at y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
+    if (adjusted_bounds%y < max_y - 1) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+        write(debug_unit, '(A,I1,A,I4,A,I3,A)') &
+          '  → d=', depth, ' DRAW_BOX at y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
           ' "' // trim(node%name) // '"'
         flush(debug_unit)
       end if
@@ -202,6 +229,9 @@ contains
         call draw_text_with_size(adjusted_bounds, node%name, node%size, is_selected)
       end if
     end if
+
+    ! Label for skipping draw but continuing to recursion
+100 continue
 
     ! Recursively render children with same scroll offset
     ! Only show children if box is large enough to meaningfully display them

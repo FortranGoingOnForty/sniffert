@@ -86,7 +86,7 @@ program sniffert
   screen_bounds%x = 0
   screen_bounds%y = 0
   screen_bounds%width = max_x
-  screen_bounds%height = max_y - 2  ! Leave room for status bar
+  screen_bounds%height = max_y - 1  ! Leave room for status bar at bottom line
 
   call calculate_treemap(root_node, screen_bounds)
 
@@ -125,30 +125,30 @@ program sniffert
       case ('u')
         ! Up arrow - previous sibling
         call move_up(selection, root_node)
-        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 1)
 
       case ('j')
         ! Down arrow - next sibling (j for down since 'd' is delete)
         call move_down(selection, root_node)
-        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 1)
 
       case ('l')
         ! Left arrow - parent
         call move_left(selection, root_node)
-        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 1)
 
       case ('r')
         ! Right arrow - first child
         call move_right(selection, root_node)
-        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 1)
 
       case ('p')
         ! Page Up - scroll up
-        scroll_offset = max(0, scroll_offset - (max_y - 2))
+        scroll_offset = max(0, scroll_offset - (max_y - 1))
 
       case ('n')
         ! Page Down - scroll down
-        scroll_offset = min(max(0, total_height - (max_y - 2)), scroll_offset + (max_y - 2))
+        scroll_offset = min(max(0, total_height - (max_y - 1)), scroll_offset + (max_y - 1))
 
       case default
         ! Unknown input, ignore
