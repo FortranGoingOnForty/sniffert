@@ -208,7 +208,7 @@ contains
 
     integer :: i, x_offset, item_width, remaining_width
     real(real64) :: row_height, row_pixel_area
-    integer, parameter :: MIN_HEIGHT = 2
+    integer, parameter :: MIN_HEIGHT = 4  ! Need 4 lines for name + size
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
@@ -236,8 +236,8 @@ contains
         item_width = 0
       end if
 
-      ! Enforce minimum width for visibility (allow overflow)
-      item_width = max(1, item_width)
+      ! Enforce minimum width for text visibility (need 5 for borders + text)
+      item_width = max(8, item_width)  ! 2 borders + 2 padding + 4 chars min
 
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
@@ -258,7 +258,7 @@ contains
 
     integer :: i, y_offset, item_height, remaining_height
     real(real64) :: row_width, row_pixel_area
-    integer, parameter :: MIN_WIDTH = 2
+    integer, parameter :: MIN_WIDTH = 8  ! Need 8 chars for borders + text
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
@@ -286,8 +286,8 @@ contains
         item_height = 0
       end if
 
-      ! Enforce minimum height for visibility (allow overflow)
-      item_height = max(1, item_height)
+      ! Enforce minimum height for text visibility (need 4 for borders + name + size)
+      item_height = max(4, item_height)
 
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset

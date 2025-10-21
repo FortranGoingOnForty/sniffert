@@ -111,18 +111,22 @@ program sniffert
       case ('u')
         ! Up arrow - previous sibling
         call move_up(selection, root_node)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
 
       case ('j')
         ! Down arrow - next sibling (j for down since 'd' is delete)
         call move_down(selection, root_node)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
 
       case ('l')
         ! Left arrow - parent
         call move_left(selection, root_node)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
 
       case ('r')
         ! Right arrow - first child
         call move_right(selection, root_node)
+        call auto_scroll_to_selection(selection, root_node, scroll_offset, max_y - 2)
 
       case ('p')
         ! Page Up - scroll up
@@ -185,6 +189,37 @@ contains
     total = max(node%bounds%y + node%bounds%height, max_child_bottom)
   end function calculate_total_height
 
+  ! Auto-scroll to keep selected node visible
+  subroutine auto_scroll_to_selection(selection, root_node, scroll_offset, viewport_height)
+    type(selection_state), intent(in) :: selection
+    type(file_node), intent(in) :: root_node
+    integer, intent(inout) :: scroll_offset
+    integer, intent(in) :: viewport_height
+    type(file_node), pointer :: selected_node
+    integer :: node_top, node_bottom
+
+    ! Get the selected node
+    selected_node => get_selected_node(root_node, selection)
+    if (.not. associated(selected_node)) return
+
+    ! Get node's screen position
+    node_top = selected_node%bounds%y
+    node_bottom = node_top + selected_node%bounds%height
+
+    ! Check if node is above viewport - scroll up
+    if (node_top < scroll_offset) then
+      scroll_offset = node_top
+    end if
+
+    ! Check if node is below viewport - scroll down
+    if (node_bottom > scroll_offset + viewport_height) then
+      scroll_offset = node_bottom - viewport_height
+    end if
+
+    ! Ensure scroll_offset is not negative
+    scroll_offset = max(0, scroll_offset)
+  end subroutine auto_scroll_to_selection
+
   ! Print usage information
   subroutine print_usage()
     print *, "Usage: sniffert [DIRECTORY]"
@@ -197,8 +232,9 @@ contains
     print *
     print *, "Interactive Controls:"
     print *, "  Arrow Keys   Navigate through files and directories"
-    print *, "  ↑/↓          Move to previous/next sibling"
+    print *, "  ↑/↓          Move to previous/next sibling (auto-scrolls)"
     print *, "  ←/→          Move to parent/child directory"
+    print *, "  PgUp/PgDn    Scroll view up/down (for large directories)"
     print *, "  c            Change directory (drill down into selection)"
     print *, "  q            Quit"
     print *
