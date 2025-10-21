@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 /* Helper to list directory and return entry names
    This avoids issues with dirent structure layout differences */
@@ -56,4 +57,9 @@ long long get_size_helper(const char *path) {
         return 0;  /* stat failed */
     }
     return (long long)st.st_size;
+}
+
+/* Helper to check if running as root */
+int is_running_as_root() {
+    return (geteuid() == 0) ? 1 : 0;
 }

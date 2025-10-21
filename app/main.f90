@@ -1,6 +1,6 @@
 program sniffert
   use types
-  use file_system, only: is_directory
+  use file_system, only: is_directory, is_running_as_root
   use disk_scanner
   use treemap_layout
   use terminal_ui
@@ -44,6 +44,20 @@ program sniffert
     print *
     call print_usage()
     stop 1
+  end if
+
+  ! Warn if running as root
+  if (is_running_as_root()) then
+    print *, "=========================================="
+    print *, "WARNING: Running as root!"
+    print *, "=========================================="
+    print *
+    print *, "Sniffert does NOT need elevated permissions."
+    print *, "Running as root is unnecessary and discouraged."
+    print *
+    print *, "Press Ctrl+C to cancel, or Enter to continue..."
+    read *
+    print *
   end if
 
   ! Scan BEFORE initializing UI so we can see errors
@@ -242,6 +256,13 @@ contains
     print *, "  sniffert              # Analyze current directory"
     print *, "  sniffert /var/log     # Analyze /var/log"
     print *, "  sniffert ~/Downloads  # Analyze Downloads folder"
+    print *
+    print *, "IMPORTANT - Permissions:"
+    print *, "  Do NOT run sniffert with sudo!"
+    print *
+    print *, "  Sniffert analyzes your accessible files. If a directory requires"
+    print *, "  elevated permissions, it will be skipped. This is intentional and safe."
+    print *, "  Running as root is unnecessary and discouraged."
     print *
   end subroutine print_usage
 

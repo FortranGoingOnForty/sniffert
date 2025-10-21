@@ -4,7 +4,7 @@ module file_system
   implicit none
   private
 
-  public :: get_file_size, is_directory, is_symlink, list_directory, get_path_separator
+  public :: get_file_size, is_directory, is_symlink, list_directory, get_path_separator, is_running_as_root
 
   ! POSIX stat structure (simplified)
   type, bind(c) :: c_stat
@@ -70,6 +70,11 @@ module file_system
       type(c_ptr), value :: path
       integer(c_long_long) :: get_size_helper
     end function get_size_helper
+
+    function is_running_as_root_helper() bind(c, name="is_running_as_root")
+      use iso_c_binding
+      integer(c_int) :: is_running_as_root_helper
+    end function is_running_as_root_helper
   end interface
 
 contains
@@ -150,5 +155,14 @@ contains
     ! Unix/Linux/macOS use forward slash
     sep = '/'
   end function get_path_separator
+
+  ! Check if running as root (sudo)
+  function is_running_as_root() result(is_root)
+    logical :: is_root
+    integer(c_int) :: result
+
+    result = is_running_as_root_helper()
+    is_root = (result /= 0)
+  end function is_running_as_root
 
 end module file_system
