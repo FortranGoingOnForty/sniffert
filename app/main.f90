@@ -13,7 +13,7 @@ program sniffert
   character(len=512) :: current_path
   character(len=1) :: action
   logical :: running, size_ok, needs_rescan
-  integer :: nargs, max_y, max_x
+  integer :: nargs, max_y, max_x, i
   character(len=256) :: arg
 
   ! Initialize
@@ -65,24 +65,17 @@ program sniffert
     stop 1
   end if
 
-  ! Initialize selection state
-  call init_selection(selection, root_node)
-
-  ! Calculate treemap layout for initial screen size
+  ! NOW we can get terminal dimensions and calculate layout
   call get_terminal_dimensions(max_y, max_x)
   screen_bounds%x = 0
   screen_bounds%y = 0
   screen_bounds%width = max_x
   screen_bounds%height = max_y - 2  ! Leave room for status bar
 
-  ! Debug: Check if we have children to render
-  if (root_node%num_children == 0) then
-    call cleanup_ui()
-    print *, "ERROR: No files to display in directory"
-    stop 1
-  end if
-
   call calculate_treemap(root_node, screen_bounds)
+
+  ! Initialize selection state
+  call init_selection(selection, root_node)
 
   ! Main loop
   needs_rescan = .false.
