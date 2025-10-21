@@ -251,6 +251,21 @@ contains
       end do
     end if
 
+    ! Special case for height=1 boxes: just draw a single horizontal line
+    if (bounds%height == 1) then
+      res = nc_move(bounds%y, bounds%x)
+      do x = bounds%x, bounds%x + bounds%width - 1
+        res = nc_addch(ichar(horiz))
+      end do
+      ! Turn off attributes
+      if (highlighted) then
+        res = nc_attroff(A_REVERSE)
+        res = nc_attroff(A_BOLD)
+      end if
+      res = nc_attroff(nc_color_pair(color_pair_num))
+      return
+    end if
+
     ! Draw top border
     res = nc_move(bounds%y, bounds%x)
     res = nc_addch(ichar(corner))
