@@ -88,7 +88,7 @@ contains
     integer, intent(in) :: depth
     character(len=*), intent(in), optional :: selected_path
     integer :: i, res
-    logical :: is_selected
+    logical :: is_selected, is_leaf
     integer :: color_pair_num
 
     ! Check if this node is selected
@@ -97,12 +97,16 @@ contains
       is_selected = (trim(node%path) == trim(selected_path))
     end if
 
+    ! Check if this is a leaf node (file or empty directory)
+    is_leaf = (.not. allocated(node%children)) .or. (node%num_children == 0)
+
     ! Choose color based on depth (cycle through available color pairs)
     color_pair_num = mod(depth, 6) + 1
 
     ! Draw the box for this node using its calculated bounds
     if (node%bounds%width > 2 .and. node%bounds%height > 1) then
-      call draw_box(node%bounds, color_pair_num, is_selected)
+      ! For leaf nodes, fill the box. For directories, just draw border
+      call draw_box(node%bounds, color_pair_num, is_selected, is_leaf)
 
       ! Add text if box is big enough
       if (node%bounds%width > 4 .and. node%bounds%height > 2) then
@@ -118,11 +122,12 @@ contains
     end if
   end subroutine render_node
 
-  ! Draw a box at the given bounds
-  subroutine draw_box(bounds, color_pair_num, highlighted)
+  ! Draw a box at the given bounds (filled for leaf nodes, border-only for directories)
+  subroutine draw_box(bounds, color_pair_num, highlighted, fill)
     type(rect), intent(in) :: bounds
     integer, intent(in) :: color_pair_num
     logical, intent(in) :: highlighted
+    logical, intent(in) :: fill
     integer :: x, y, res
     character(len=1) :: corner, horiz, vert
 
@@ -142,6 +147,16 @@ contains
     if (highlighted) then
       res = nc_attron(A_BOLD)
       res = nc_attron(A_REVERSE)
+    end if
+
+    ! Fill the entire box with background color (only for leaf nodes)
+    if (fill) then
+      do y = bounds%y, bounds%y + bounds%height - 1
+        res = nc_move(y, bounds%x)
+        do x = bounds%x, bounds%x + bounds%width - 1
+          res = nc_addch(ichar(' '))
+        end do
+      end do
     end if
 
     ! Draw top border
