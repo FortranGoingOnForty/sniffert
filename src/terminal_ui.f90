@@ -97,6 +97,11 @@ contains
       is_selected = (trim(node%path) == trim(selected_path))
     end if
 
+    ! Skip rendering if this node has zero dimensions (was skipped in layout)
+    if (node%bounds%width < 1 .or. node%bounds%height < 1) then
+      return
+    end if
+
     ! Check if this is a leaf node (file or empty directory)
     is_leaf = (.not. allocated(node%children)) .or. (node%num_children == 0)
 
@@ -104,7 +109,8 @@ contains
     color_pair_num = mod(depth, 6) + 1
 
     ! Draw the box for this node using its calculated bounds
-    if (node%bounds%width > 2 .and. node%bounds%height > 1) then
+    ! Only draw if box is at least 2x2 pixels
+    if (node%bounds%width >= 2 .and. node%bounds%height >= 2) then
       ! For leaf nodes, fill the box. For directories, just draw border
       call draw_box(node%bounds, color_pair_num, is_selected, is_leaf)
 
@@ -114,8 +120,10 @@ contains
       end if
     end if
 
-    ! Recursively render children using their calculated bounds
-    if (allocated(node%children)) then
+    ! Recursively render children only if this node is large enough
+    ! (no point rendering children if parent is tiny)
+    if (allocated(node%children) .and. &
+        node%bounds%width >= 4 .and. node%bounds%height >= 4) then
       do i = 1, node%num_children
         call render_node(node%children(i), depth + 1, selected_path)
       end do
@@ -299,17 +307,50 @@ contains
   subroutine render_status_bar(y, width, root_node)
     integer, intent(in) :: y, width
     type(file_node), intent(in) :: root_node
-    character(len=256) :: status_text
-    integer :: res
+    character(len=512) :: status_text
+    integer :: res, visible_count, total_count, i, text_len
 
-    write(status_text, '(A,A,A)') 'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
-                                   trim(root_node%path), ' '
+    ! Count visible vs total files
+    total_count = root_node%num_children
+    visible_count = count_visible_nodes(root_node)
+
+    ! Build status message
+    if (visible_count < total_count) then
+      write(status_text, '(A,A,A,I0,A,I0,A)') &
+        'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
+        trim(root_node%path), ' (', visible_count, ' of ', total_count, ' shown)'
+    else
+      write(status_text, '(A,A,A)') &
+        'Arrows:Navigate [c]hdir [d]el [q]uit | ', trim(root_node%path), ' '
+    end if
+
+    ! Pad to full width with spaces
+    text_len = len_trim(status_text)
+    do i = text_len + 1, min(width, len(status_text))
+      status_text(i:i) = ' '
+    end do
 
     res = nc_move(y, 0)
     res = nc_attron(A_REVERSE)
-    res = nc_addstr(trim(status_text))
+    res = nc_addstr(status_text(1:min(width, len(status_text))))
     res = nc_attroff(A_REVERSE)
   end subroutine render_status_bar
+
+  ! Count how many child nodes have non-zero dimensions (are visible)
+  function count_visible_nodes(node) result(count)
+    type(file_node), intent(in) :: node
+    integer :: count, i
+
+    count = 0
+    if (allocated(node%children)) then
+      do i = 1, node%num_children
+        if (node%children(i)%bounds%width > 0 .and. &
+            node%children(i)%bounds%height > 0) then
+          count = count + 1
+        end if
+      end do
+    end if
+  end function count_visible_nodes
 
   ! Handle user input
   function handle_input() result(action)
