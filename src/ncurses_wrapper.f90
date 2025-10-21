@@ -10,7 +10,7 @@ module ncurses_wrapper
   public :: nc_color_pair
   public :: COLOR_BLACK, COLOR_RED, COLOR_GREEN, COLOR_YELLOW
   public :: COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN, COLOR_WHITE
-  public :: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+  public :: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_PPAGE, KEY_NPAGE
   public :: A_NORMAL, A_REVERSE, A_BOLD
 
   ! ncurses constants (actual values may vary by platform)
@@ -27,6 +27,8 @@ module ncurses_wrapper
   integer(c_int), parameter :: KEY_DOWN = 258
   integer(c_int), parameter :: KEY_LEFT = 260
   integer(c_int), parameter :: KEY_RIGHT = 261
+  integer(c_int), parameter :: KEY_PPAGE = 339  ! Page Up
+  integer(c_int), parameter :: KEY_NPAGE = 338  ! Page Down
 
   integer(c_int), parameter :: A_NORMAL = 0
   integer(c_int), parameter :: A_REVERSE = 262144

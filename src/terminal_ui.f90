@@ -62,9 +62,10 @@ contains
     is_adequate = (max_x >= MIN_WIDTH .and. max_y >= MIN_HEIGHT)
   end function check_terminal_size
 
-  ! Render the treemap
-  subroutine render_treemap(root_node, selected_path)
+  ! Render the treemap with scroll offset
+  subroutine render_treemap(root_node, scroll_offset, total_height, selected_path)
     type(file_node), intent(in) :: root_node
+    integer, intent(in) :: scroll_offset, total_height
     character(len=*), intent(in), optional :: selected_path
     integer :: res, max_y, max_x
 
@@ -73,23 +74,24 @@ contains
     ! Get screen dimensions
     call nc_getmaxyx(max_y, max_x)
 
-    ! Render the tree using calculated bounds
-    call render_node(root_node, 0, selected_path)
+    ! Render the tree using calculated bounds with scroll offset
+    call render_node(root_node, 0, scroll_offset, selected_path)
 
-    ! Render status bar
-    call render_status_bar(max_y - 1, max_x, root_node)
+    ! Render status bar with scroll info
+    call render_status_bar(max_y - 1, max_x, root_node, scroll_offset, total_height, max_y - 2)
 
     res = nc_refresh()
   end subroutine render_treemap
 
-  ! Render a single node and its children
-  recursive subroutine render_node(node, depth, selected_path)
+  ! Render a single node and its children with scroll offset
+  recursive subroutine render_node(node, depth, scroll_offset, selected_path)
     type(file_node), intent(in) :: node
-    integer, intent(in) :: depth
+    integer, intent(in) :: depth, scroll_offset
     character(len=*), intent(in), optional :: selected_path
-    integer :: i, res
+    integer :: i, res, max_y, max_x
     logical :: is_selected, is_leaf
     integer :: color_pair_num
+    type(rect) :: adjusted_bounds
 
     ! Check if this node is selected
     is_selected = .false.
@@ -97,8 +99,25 @@ contains
       is_selected = (trim(node%path) == trim(selected_path))
     end if
 
-    ! Skip rendering if this node has zero dimensions (was skipped in layout)
+    ! Skip rendering if this node has zero dimensions
     if (node%bounds%width < 1 .or. node%bounds%height < 1) then
+      return
+    end if
+
+    ! Apply scroll offset to bounds
+    adjusted_bounds = node%bounds
+    adjusted_bounds%y = node%bounds%y - scroll_offset
+
+    ! Get screen dimensions for clipping
+    call nc_getmaxyx(max_y, max_x)
+
+    ! Skip if completely above viewport
+    if (adjusted_bounds%y + adjusted_bounds%height < 0) then
+      return
+    end if
+
+    ! Skip if completely below viewport
+    if (adjusted_bounds%y >= max_y - 2) then
       return
     end if
 
@@ -108,24 +127,23 @@ contains
     ! Choose color based on depth (cycle through available color pairs)
     color_pair_num = mod(depth, 6) + 1
 
-    ! Draw the box for this node using its calculated bounds
-    ! Only draw if box is at least 2x2 pixels
-    if (node%bounds%width >= 2 .and. node%bounds%height >= 2) then
+    ! Draw the box using adjusted bounds
+    if (adjusted_bounds%width >= 2 .and. adjusted_bounds%height >= 2 .and. &
+        adjusted_bounds%y < max_y - 2) then
       ! For leaf nodes, fill the box. For directories, just draw border
-      call draw_box(node%bounds, color_pair_num, is_selected, is_leaf)
+      call draw_box(adjusted_bounds, color_pair_num, is_selected, is_leaf)
 
       ! Add text if box is big enough
-      if (node%bounds%width > 4 .and. node%bounds%height > 2) then
-        call draw_text_with_size(node%bounds, node%name, node%size, is_selected)
+      if (adjusted_bounds%width > 4 .and. adjusted_bounds%height > 2) then
+        call draw_text_with_size(adjusted_bounds, node%name, node%size, is_selected)
       end if
     end if
 
-    ! Recursively render children only if this node is large enough
-    ! (no point rendering children if parent is tiny)
+    ! Recursively render children with same scroll offset
     if (allocated(node%children) .and. &
         node%bounds%width >= 4 .and. node%bounds%height >= 4) then
       do i = 1, node%num_children
-        call render_node(node%children(i), depth + 1, selected_path)
+        call render_node(node%children(i), depth + 1, scroll_offset, selected_path)
       end do
     end if
   end subroutine render_node
@@ -304,24 +322,44 @@ contains
   end function format_size
 
   ! Render status bar
-  subroutine render_status_bar(y, width, root_node)
-    integer, intent(in) :: y, width
+  subroutine render_status_bar(y, width, root_node, scroll_offset, total_height, viewport_height)
+    integer, intent(in) :: y, width, scroll_offset, total_height, viewport_height
     type(file_node), intent(in) :: root_node
     character(len=512) :: status_text
     integer :: res, visible_count, total_count, i, text_len
+    integer :: view_start, view_end
 
     ! Count visible vs total files
     total_count = root_node%num_children
     visible_count = count_visible_nodes(root_node)
 
+    ! Calculate visible range for scroll indicator
+    view_start = scroll_offset + 1
+    view_end = min(scroll_offset + viewport_height, total_height)
+
     ! Build status message
-    if (visible_count < total_count) then
-      write(status_text, '(A,A,A,I0,A,I0,A)') &
-        'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
-        trim(root_node%path), ' (', visible_count, ' of ', total_count, ' shown)'
+    if (total_height > viewport_height) then
+      ! Show scroll position if content overflows
+      if (visible_count < total_count) then
+        write(status_text, '(A,A,A,I0,A,I0,A,I0,A,I0,A)') &
+          'Arrows/PgUp/PgDn:Navigate [c]hdir [q]uit | ', &
+          trim(root_node%path), ' (', visible_count, ' of ', total_count, &
+          ' files) [', view_start, '-', view_end, ' lines]'
+      else
+        write(status_text, '(A,A,A,I0,A,I0,A)') &
+          'Arrows/PgUp/PgDn:Navigate [c]hdir [q]uit | ', &
+          trim(root_node%path), ' [', view_start, '-', view_end, ' lines]'
+      end if
     else
-      write(status_text, '(A,A,A)') &
-        'Arrows:Navigate [c]hdir [d]el [q]uit | ', trim(root_node%path), ' '
+      ! No scrolling needed
+      if (visible_count < total_count) then
+        write(status_text, '(A,A,A,I0,A,I0,A)') &
+          'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
+          trim(root_node%path), ' (', visible_count, ' of ', total_count, ' shown)'
+      else
+        write(status_text, '(A,A,A)') &
+          'Arrows:Navigate [c]hdir [d]el [q]uit | ', trim(root_node%path), ' '
+      end if
     end if
 
     ! Pad to full width with spaces
@@ -374,6 +412,10 @@ contains
         action = 'l'
       case (KEY_RIGHT)
         action = 'r'
+      case (KEY_PPAGE)
+        action = 'p'  ! Page Up
+      case (KEY_NPAGE)
+        action = 'n'  ! Page Down
       case default
         action = ' '
     end select

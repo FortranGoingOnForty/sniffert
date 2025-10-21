@@ -236,21 +236,8 @@ contains
         item_width = 0
       end if
 
-      ! Enforce minimum width
-      item_width = max(2, item_width)
-
-      ! Stop if we've run out of space (skip remaining tiny files)
-      if (remaining_width < 2) then
-        nodes(i)%bounds%width = 0
-        cycle
-      end if
-
-      ! Last item or exact fit gets remaining space
-      if (i == num_nodes .or. item_width >= remaining_width) then
-        item_width = remaining_width
-      end if
-
-      item_width = min(item_width, remaining_width)
+      ! Enforce minimum width for visibility (allow overflow)
+      item_width = max(1, item_width)
 
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
@@ -258,7 +245,6 @@ contains
       nodes(i)%bounds%height = row_bounds%height
 
       x_offset = x_offset + item_width
-      remaining_width = remaining_width - item_width
     end do
   end subroutine layout_row_horizontal
 
@@ -300,21 +286,8 @@ contains
         item_height = 0
       end if
 
-      ! Enforce minimum height
-      item_height = max(2, item_height)
-
-      ! Stop if we've run out of space (skip remaining tiny files)
-      if (remaining_height < 2) then
-        nodes(i)%bounds%height = 0
-        cycle
-      end if
-
-      ! Last item or exact fit gets remaining space
-      if (i == num_nodes .or. item_height >= remaining_height) then
-        item_height = remaining_height
-      end if
-
-      item_height = min(item_height, remaining_height)
+      ! Enforce minimum height for visibility (allow overflow)
+      item_height = max(1, item_height)
 
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset
@@ -322,7 +295,6 @@ contains
       nodes(i)%bounds%height = item_height
 
       y_offset = y_offset + item_height
-      remaining_height = remaining_height - item_height
     end do
   end subroutine layout_row_vertical
 

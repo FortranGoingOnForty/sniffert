@@ -14,10 +14,12 @@ program sniffert
   character(len=1) :: action
   logical :: running, size_ok, needs_rescan
   integer :: nargs, max_y, max_x
+  integer :: scroll_offset, total_height
   character(len=256) :: arg
 
   ! Initialize
   running = .true.
+  scroll_offset = 0
 
   ! Get command line argument for starting directory
   nargs = command_argument_count()
@@ -74,14 +76,17 @@ program sniffert
 
   call calculate_treemap(root_node, screen_bounds)
 
+  ! Calculate total height of treemap (may exceed screen)
+  total_height = calculate_total_height(root_node)
+
   ! Initialize selection state
   call init_selection(selection, root_node)
 
   ! Main loop
   needs_rescan = .false.
   do while (running)
-    ! Render the current view with selection
-    call render_treemap(root_node, get_selected_path(selection))
+    ! Render the current view with selection and scroll offset
+    call render_treemap(root_node, scroll_offset, total_height, get_selected_path(selection))
 
     ! Handle input
     action = handle_input()
@@ -119,6 +124,14 @@ program sniffert
         ! Right arrow - first child
         call move_right(selection, root_node)
 
+      case ('p')
+        ! Page Up - scroll up
+        scroll_offset = max(0, scroll_offset - (max_y - 2))
+
+      case ('n')
+        ! Page Down - scroll down
+        scroll_offset = min(max(0, total_height - (max_y - 2)), scroll_offset + (max_y - 2))
+
       case default
         ! Unknown input, ignore
         continue
@@ -138,6 +151,10 @@ program sniffert
       screen_bounds%height = max_y - 2
       call calculate_treemap(root_node, screen_bounds)
 
+      ! Recalculate total height
+      total_height = calculate_total_height(root_node)
+      scroll_offset = 0
+
       needs_rescan = .false.
     end if
   end do
@@ -148,6 +165,25 @@ program sniffert
   print *, "Sniffert terminated successfully."
 
 contains
+
+  ! Calculate total height of treemap (including overflow)
+  recursive function calculate_total_height(node) result(total)
+    type(file_node), intent(in) :: node
+    integer :: total, i, max_child_bottom
+
+    if (.not. allocated(node%children) .or. node%num_children == 0) then
+      total = node%bounds%y + node%bounds%height
+      return
+    end if
+
+    ! Find the bottom-most child
+    max_child_bottom = 0
+    do i = 1, node%num_children
+      max_child_bottom = max(max_child_bottom, calculate_total_height(node%children(i)))
+    end do
+
+    total = max(node%bounds%y + node%bounds%height, max_child_bottom)
+  end function calculate_total_height
 
   ! Print usage information
   subroutine print_usage()
