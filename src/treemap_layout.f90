@@ -208,11 +208,12 @@ contains
 
     integer :: i, x_offset, item_width, remaining_width
     real(real64) :: row_height, row_pixel_area
+    integer, parameter :: MIN_HEIGHT = 2
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
 
-    ! Calculate row height
+    ! Calculate row height with minimum
     if (bounds%width > 0) then
       row_height = row_pixel_area / real(bounds%width, real64)
     else
@@ -222,7 +223,7 @@ contains
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
     row_bounds%width = bounds%width
-    row_bounds%height = max(1, int(row_height))
+    row_bounds%height = max(MIN_HEIGHT, int(row_height))
 
     x_offset = bounds%x
     remaining_width = bounds%width
@@ -235,12 +236,21 @@ contains
         item_width = 0
       end if
 
-      ! Last item gets all remaining width (handles rounding)
-      if (i == num_nodes) then
+      ! Enforce minimum width
+      item_width = max(2, item_width)
+
+      ! Stop if we've run out of space (skip remaining tiny files)
+      if (remaining_width < 2) then
+        nodes(i)%bounds%width = 0
+        cycle
+      end if
+
+      ! Last item or exact fit gets remaining space
+      if (i == num_nodes .or. item_width >= remaining_width) then
         item_width = remaining_width
       end if
 
-      item_width = max(1, min(item_width, remaining_width))
+      item_width = min(item_width, remaining_width)
 
       nodes(i)%bounds%x = x_offset
       nodes(i)%bounds%y = bounds%y
@@ -262,11 +272,12 @@ contains
 
     integer :: i, y_offset, item_height, remaining_height
     real(real64) :: row_width, row_pixel_area
+    integer, parameter :: MIN_WIDTH = 2
 
     ! Convert row area from bytes to pixels² using scale factor
     row_pixel_area = row_area * scale_factor
 
-    ! Calculate row width
+    ! Calculate row width with minimum
     if (bounds%height > 0) then
       row_width = row_pixel_area / real(bounds%height, real64)
     else
@@ -275,7 +286,7 @@ contains
 
     row_bounds%x = bounds%x
     row_bounds%y = bounds%y
-    row_bounds%width = max(1, int(row_width))
+    row_bounds%width = max(MIN_WIDTH, int(row_width))
     row_bounds%height = bounds%height
 
     y_offset = bounds%y
@@ -289,12 +300,21 @@ contains
         item_height = 0
       end if
 
-      ! Last item gets all remaining height (handles rounding)
-      if (i == num_nodes) then
+      ! Enforce minimum height
+      item_height = max(2, item_height)
+
+      ! Stop if we've run out of space (skip remaining tiny files)
+      if (remaining_height < 2) then
+        nodes(i)%bounds%height = 0
+        cycle
+      end if
+
+      ! Last item or exact fit gets remaining space
+      if (i == num_nodes .or. item_height >= remaining_height) then
         item_height = remaining_height
       end if
 
-      item_height = max(1, min(item_height, remaining_height))
+      item_height = min(item_height, remaining_height)
 
       nodes(i)%bounds%x = bounds%x
       nodes(i)%bounds%y = y_offset
