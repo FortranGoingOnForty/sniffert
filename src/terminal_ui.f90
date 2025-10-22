@@ -453,23 +453,23 @@ contains
       ! Show scroll position if content overflows
       if (visible_count < total_count) then
         write(status_text, '(A,A,A,I0,A,I0,A,I0,A,I0,A)') &
-          'Arrows/PgUp/PgDn:Navigate [c]hdir [d]el [q]uit | ', &
+          'Arrows/PgUp/PgDn:Nav [.]parent [c]hdir [d]el [q]uit | ', &
           trim(root_node%path), ' (', visible_count, ' of ', total_count, &
           ' files) [', view_start, '-', view_end, ' lines]'
       else
         write(status_text, '(A,A,A,I0,A,I0,A)') &
-          'Arrows/PgUp/PgDn:Navigate [c]hdir [d]el [q]uit | ', &
+          'Arrows/PgUp/PgDn:Nav [.]parent [c]hdir [d]el [q]uit | ', &
           trim(root_node%path), ' [', view_start, '-', view_end, ' lines]'
       end if
     else
       ! No scrolling needed
       if (visible_count < total_count) then
         write(status_text, '(A,A,A,I0,A,I0,A)') &
-          'Arrows:Navigate [c]hdir [d]el [q]uit | ', &
+          'Arrows:Nav [.]parent [c]hdir [d]el [q]uit | ', &
           trim(root_node%path), ' (', visible_count, ' of ', total_count, ' shown)'
       else
         write(status_text, '(A,A,A)') &
-          'Arrows:Navigate [c]hdir [d]el [q]uit | ', trim(root_node%path), ' '
+          'Arrows:Nav [.]parent [c]hdir [d]el [q]uit | ', trim(root_node%path), ' '
       end if
     end if
 
@@ -515,6 +515,8 @@ contains
         action = 'c'
       case (ichar('d'), ichar('D'))
         action = 'd'
+      case (ichar('.'))
+        action = 'P'  ! P for Parent (uppercase to distinguish from page up 'p')
       case (KEY_UP)
         action = 'u'
       case (KEY_DOWN)

@@ -11,11 +11,11 @@ program sniffert
   type(file_node) :: root_node
   type(rect) :: screen_bounds
   type(selection_state) :: selection
-  character(len=512) :: current_path, selected_path, prompt_msg
+  character(len=512) :: current_path, selected_path, prompt_msg, parent_path
   character(len=1) :: action
   logical :: running, size_ok, needs_rescan, confirmed, delete_success
   integer :: nargs, max_y, max_x
-  integer :: scroll_offset, total_height
+  integer :: scroll_offset, total_height, last_slash
   character(len=256) :: arg
 
   ! Initialize
@@ -140,6 +140,31 @@ program sniffert
             end if
             ! If deletion failed, just continue (user will see file still there)
           end if
+        end if
+
+      case ('P')
+        ! Go up to parent directory (. key)
+        ! Find last slash to get parent directory
+        last_slash = index(trim(current_path), '/', back=.true.)
+
+        if (last_slash > 1) then
+          ! Not at root, go to parent
+          parent_path = current_path(1:last_slash-1)
+
+          ! Handle special case: if parent is empty, we're at root
+          if (len_trim(parent_path) == 0) then
+            parent_path = '/'
+          end if
+
+          ! Check if parent is accessible (try to scan it)
+          if (is_directory(trim(parent_path))) then
+            current_path = parent_path
+            needs_rescan = .true.
+          end if
+          ! If not accessible, just stay in current directory (silent fail per permissions paradigm)
+        else if (last_slash == 1) then
+          ! Already at root (/something), can't go higher than /
+          continue
         end if
 
       case ('u')
