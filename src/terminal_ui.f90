@@ -126,33 +126,16 @@ contains
       end if
     end if
 
-    ! Log ALL render attempts (BEFORE viewport checks)
-    ! Include depth=0-4 to debug hierarchy issues
-    if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
-      write(debug_unit, '(A,I1,A,I3,A,I4,A,I4,A,I3,A,I4,A)') &
-        'RENDER d=', depth, ' scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
-        ' adj_y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
-        ' max_y=', max_y, ' "' // trim(node%name) // '"'
-      flush(debug_unit)
-    end if
 
     ! Skip if completely above viewport - BUT ONLY FOR LEAF NODES
     ! Containers must recurse into children even if the parent box is out of view
     if (adjusted_bounds%y + adjusted_bounds%height <= 0 .and. is_leaf) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
-        write(debug_unit, '(A,I1,A)') '  → d=', depth, ' SKIPPED: leaf above viewport'
-        flush(debug_unit)
-      end if
       return
     end if
 
     ! Skip if completely below viewport - BUT ONLY FOR LEAF NODES
     ! Containers must recurse into children even if the parent box is out of view
     if (adjusted_bounds%y > max_y - 1 .and. is_leaf) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
-        write(debug_unit, '(A,I1,A,I4,A,I4)') '  → d=', depth, ' SKIPPED: leaf beyond viewport (y=', adjusted_bounds%y, ' > max_y-1=', max_y - 1, ')'
-        flush(debug_unit)
-      end if
       return
     end if
 
@@ -221,8 +204,9 @@ contains
         flush(debug_unit)
       end if
 
-      ! For leaf nodes, fill the box. For directories, just draw border
-      call draw_box(adjusted_bounds, color_pair_num, is_selected, is_leaf)
+      ! Fill all boxes - directories are filled to show they're navigable
+      ! Since we only render one level deep, all boxes are "leaves" in the display
+      call draw_box(adjusted_bounds, color_pair_num, is_selected, .true.)
 
       ! Add text if box is big enough (matches layout minimums)
       if (adjusted_bounds%width >= 10 .and. adjusted_bounds%height >= 3) then
@@ -234,10 +218,10 @@ contains
 100 continue
 
     ! Recursively render children with same scroll offset
-    ! Only show children if box is large enough to meaningfully display them
-    ! This prevents cluttered rendering in large directories with many small boxes
-    if (allocated(node%children) .and. &
-        node%bounds%width >= 40 .and. node%bounds%height >= 10) then
+    ! Only render ONE level deep - show direct children only, not grandchildren
+    ! This prevents visual clutter and matches the navigation model
+    ! (user navigates into directories with [c]hdir to see their contents)
+    if (depth == 0 .and. allocated(node%children)) then
       do i = 1, node%num_children
         call render_node(node%children(i), depth + 1, scroll_offset, selected_path)
       end do
