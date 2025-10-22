@@ -5,7 +5,7 @@ module file_system
   private
 
   public :: get_file_size, is_directory, is_symlink, list_directory, get_path_separator, is_running_as_root
-  public :: delete_path
+  public :: delete_path, get_absolute_path
 
   ! POSIX stat structure (simplified)
   type, bind(c) :: c_stat
@@ -76,6 +76,14 @@ module file_system
       use iso_c_binding
       integer(c_int) :: is_running_as_root_helper
     end function is_running_as_root_helper
+
+    function get_absolute_path_helper(path, result, result_len) bind(c, name="get_absolute_path")
+      use iso_c_binding
+      type(c_ptr), value :: path
+      character(kind=c_char), dimension(*) :: result
+      integer(c_int), value :: result_len
+      integer(c_int) :: get_absolute_path_helper
+    end function get_absolute_path_helper
   end interface
 
 contains
@@ -192,5 +200,35 @@ contains
     call execute_command_line(trim(command), exitstat=exit_code)
     success = (exit_code == 0)
   end function delete_path
+
+  ! Get absolute path from relative or absolute path
+  function get_absolute_path(path) result(abs_path)
+    character(len=*), intent(in) :: path
+    character(len=:), allocatable :: abs_path
+    character(kind=c_char, len=512), target :: c_path, c_result
+    integer(c_int) :: result_code, i, path_len
+
+    ! Convert Fortran string to C string
+    c_path = trim(path) // c_null_char
+
+    ! Call C helper
+    result_code = get_absolute_path_helper(c_loc(c_path), c_result, 512_c_int)
+
+    if (result_code == 0) then
+      ! Failed to resolve, return original path
+      abs_path = trim(path)
+      return
+    end if
+
+    ! Convert C string back to Fortran string
+    path_len = 0
+    do i = 1, 512
+      if (c_result(i:i) == c_null_char) exit
+      path_len = path_len + 1
+    end do
+
+    allocate(character(len=path_len) :: abs_path)
+    abs_path = c_result(1:path_len)
+  end function get_absolute_path
 
 end module file_system

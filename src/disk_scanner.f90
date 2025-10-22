@@ -5,7 +5,7 @@ module disk_scanner
   implicit none
   private
 
-  public :: scan_directory, build_tree, calculate_sizes
+  public :: scan_directory, build_tree, calculate_sizes, dump_tree_debug
 
   ! Directories to skip (reduce scan time and avoid issues)
   character(len=*), parameter, dimension(7) :: SKIP_DIRS = &
@@ -165,5 +165,64 @@ contains
       filename = trim(path)
     end if
   end function extract_filename
+
+  ! Debug function to dump tree structure to file
+  subroutine dump_tree_debug(node, filename)
+    type(file_node), intent(in) :: node
+    character(len=*), intent(in) :: filename
+    integer :: unit, ios
+
+    open(newunit=unit, file=filename, status='replace', iostat=ios)
+    if (ios /= 0) then
+      print *, "Warning: Could not open debug file: ", trim(filename)
+      return
+    end if
+
+    write(unit, '(A)') '=== TREE STRUCTURE DEBUG ==='
+    call dump_node_recursive(node, unit, 0)
+    close(unit)
+  end subroutine dump_tree_debug
+
+  ! Recursive helper for dump_tree_debug
+  recursive subroutine dump_node_recursive(node, unit, depth)
+    type(file_node), intent(in) :: node
+    integer, intent(in) :: unit, depth
+    character(len=512) :: indent
+    integer :: i
+    character(len=20) :: size_str
+
+    ! Build indent string
+    indent = ''
+    do i = 1, depth * 2
+      indent(i:i) = ' '
+    end do
+
+    ! Format size
+    if (node%size < 1024_int64) then
+      write(size_str, '(I0,A)') node%size, 'B'
+    else if (node%size < 1024_int64**2) then
+      write(size_str, '(F0.2,A)') real(node%size)/1024.0, 'KB'
+    else if (node%size < 1024_int64**3) then
+      write(size_str, '(F0.2,A)') real(node%size)/(1024.0**2), 'MB'
+    else
+      write(size_str, '(F0.2,A)') real(node%size)/(1024.0**3), 'GB'
+    end if
+
+    ! Write node info
+    if (node%is_directory) then
+      write(unit, '(A,A,A,A,A,A,I0,A)') trim(indent(1:depth*2)), '[DIR] ', &
+        trim(node%name), ' (', trim(size_str), ', ', node%num_children, ' children)'
+    else
+      write(unit, '(A,A,A,A,A,A)') trim(indent(1:depth*2)), '[FILE] ', &
+        trim(node%name), ' (', trim(size_str), ')'
+    end if
+
+    ! Recurse into children
+    if (allocated(node%children)) then
+      do i = 1, node%num_children
+        call dump_node_recursive(node%children(i), unit, depth + 1)
+      end do
+    end if
+  end subroutine dump_node_recursive
 
 end module disk_scanner

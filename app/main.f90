@@ -1,7 +1,7 @@
 program sniffert
   use types
-  use file_system, only: is_directory, is_running_as_root, delete_path
-  use disk_scanner
+  use file_system, only: is_directory, is_running_as_root, delete_path, get_absolute_path
+  use disk_scanner, only: build_tree, calculate_sizes, dump_tree_debug
   use treemap_layout
   use terminal_ui, only: init_ui, cleanup_ui, render_treemap, handle_input, &
                          check_terminal_size, get_terminal_dimensions, confirm_action
@@ -47,6 +47,9 @@ program sniffert
     stop 1
   end if
 
+  ! Convert to absolute path (resolves '.' and relative paths)
+  current_path = get_absolute_path(current_path)
+
   ! Warn if running as root
   if (is_running_as_root()) then
     print *, "=========================================="
@@ -67,6 +70,10 @@ program sniffert
   print *, "(This may take a moment for large directories...)"
   print *
   call build_tree(current_path, root_node)
+
+  ! DEBUG: Dump tree structure to file
+  call dump_tree_debug(root_node, '/tmp/sniffert_tree.log')
+
   print *, "Scan complete! Found ", root_node%num_children, " items"
   print *, "Starting interactive view..."
   print *
@@ -204,6 +211,10 @@ program sniffert
     if (needs_rescan) then
       ! Re-scan from new directory
       call build_tree(current_path, root_node)
+
+      ! DEBUG: Dump tree structure to file
+      call dump_tree_debug(root_node, '/tmp/sniffert_tree.log')
+
       call init_selection(selection, root_node)
 
       ! Recalculate layout

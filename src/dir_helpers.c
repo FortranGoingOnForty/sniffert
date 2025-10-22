@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <limits.h>
 
 /* Helper to list directory and return entry names
    This avoids issues with dirent structure layout differences */
@@ -62,4 +64,19 @@ long long get_size_helper(const char *path) {
 /* Helper to check if running as root */
 int is_running_as_root() {
     return (geteuid() == 0) ? 1 : 0;
+}
+
+/* Helper to get absolute path from relative path */
+int get_absolute_path(const char *path, char *result, int result_len) {
+    char *abs_path = realpath(path, NULL);
+    if (abs_path == NULL) {
+        return 0;  /* Failed to resolve path */
+    }
+
+    /* Copy to result buffer */
+    strncpy(result, abs_path, result_len - 1);
+    result[result_len - 1] = '\0';
+
+    free(abs_path);
+    return 1;  /* Success */
 }
