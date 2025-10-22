@@ -12,7 +12,8 @@ contains
   recursive subroutine calculate_treemap(node, bounds)
     type(file_node), intent(inout) :: node
     type(rect), intent(in) :: bounds
-    integer :: i
+    type(rect) :: child_container
+    integer :: i, j
 
     ! Set this node's bounds
     node%bounds = bounds
@@ -27,13 +28,25 @@ contains
     ! Sort children by size (descending) for better aspect ratios
     call sort_by_size(node%children, node%num_children)
 
-    ! Layout children using squarified algorithm
-    call squarify(node%children, node%num_children, bounds, node%size)
+    ! Layout children using squarified algorithm with RELATIVE coordinates
+    ! Children are laid out in a (0, 0, width, height) space
+    child_container%x = 0
+    child_container%y = 0
+    child_container%width = bounds%width
+    child_container%height = bounds%height
+    call squarify(node%children, node%num_children, child_container, node%size)
+
+    ! Offset all children by this node's position (convert relative to absolute)
+    do i = 1, node%num_children
+      node%children(i)%bounds%x = node%children(i)%bounds%x + bounds%x
+      node%children(i)%bounds%y = node%children(i)%bounds%y + bounds%y
+    end do
 
     ! Recursively layout each child's children
-    do i = 1, node%num_children
-      if (allocated(node%children(i)%children)) then
-        call calculate_treemap(node%children(i), node%children(i)%bounds)
+    do j = 1, node%num_children
+      if (allocated(node%children(j)%children)) then
+        ! Pass child's bounds (now in absolute coordinates) for recursive layout
+        call calculate_treemap(node%children(j), node%children(j)%bounds)
       end if
     end do
   end subroutine calculate_treemap

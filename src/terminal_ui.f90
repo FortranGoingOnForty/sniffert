@@ -126,9 +126,9 @@ contains
       end if
     end if
 
-    ! Log ALL render attempts when scrolling (BEFORE viewport checks)
-    ! Include depth=0 (root) and depth=1 (children) to debug recursion issues
-    if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+    ! Log ALL render attempts (BEFORE viewport checks)
+    ! Include depth=0-4 to debug hierarchy issues
+    if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
       write(debug_unit, '(A,I1,A,I3,A,I4,A,I4,A,I3,A,I4,A)') &
         'RENDER d=', depth, ' scroll=', scroll_offset, ' orig_y=', node%bounds%y, &
         ' adj_y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
@@ -139,7 +139,7 @@ contains
     ! Skip if completely above viewport - BUT ONLY FOR LEAF NODES
     ! Containers must recurse into children even if the parent box is out of view
     if (adjusted_bounds%y + adjusted_bounds%height <= 0 .and. is_leaf) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A)') '  → d=', depth, ' SKIPPED: leaf above viewport'
         flush(debug_unit)
       end if
@@ -149,7 +149,7 @@ contains
     ! Skip if completely below viewport - BUT ONLY FOR LEAF NODES
     ! Containers must recurse into children even if the parent box is out of view
     if (adjusted_bounds%y > max_y - 1 .and. is_leaf) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I4,A,I4)') '  → d=', depth, ' SKIPPED: leaf beyond viewport (y=', adjusted_bounds%y, ' > max_y-1=', max_y - 1, ')'
         flush(debug_unit)
       end if
@@ -158,7 +158,7 @@ contains
 
     ! Clip bounds to viewport (ncurses cannot render at negative coordinates)
     if (adjusted_bounds%y < 0) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I3,A,I3,A,I3,A)') &
           '  d=', depth, ' BEFORE CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
           ' scroll=', scroll_offset, ' "' // trim(node%name) // '"'
@@ -169,7 +169,7 @@ contains
       adjusted_bounds%height = adjusted_bounds%height + adjusted_bounds%y
       adjusted_bounds%y = 0
 
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I3,A,I3)') &
           '  d=', depth, ' AFTER CLIP: y=', adjusted_bounds%y, ' h=', adjusted_bounds%height
         flush(debug_unit)
@@ -180,7 +180,7 @@ contains
     ! Status bar at max_y-1, so content must end by max_y-2
     if (adjusted_bounds%y + adjusted_bounds%height > max_y - 1) then
       adjusted_bounds%height = max((max_y - 1) - adjusted_bounds%y, 0)
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I3)') '  d=', depth, ' BOTTOM CLIP: new_h=', adjusted_bounds%height
         flush(debug_unit)
       end if
@@ -189,7 +189,7 @@ contains
     ! Skip if clipping resulted in invalid dimensions - BUT ONLY FOR LEAF NODES
     ! Containers with invalid dimensions must still recurse into children
     if ((adjusted_bounds%width < 1 .or. adjusted_bounds%height < 1) .and. is_leaf) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I3,A,I3)') '  → d=', depth, ' SKIPPED: leaf with invalid dims after clip (w=', &
           adjusted_bounds%width, ' h=', adjusted_bounds%height, ')'
         flush(debug_unit)
@@ -199,7 +199,7 @@ contains
 
     ! For containers with invalid dimensions, don't draw but DO recurse into children
     if (adjusted_bounds%width < 1 .or. adjusted_bounds%height < 1) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I3,A,I3,A)') '  → d=', depth, ' SKIP DRAW (invalid dims w=', &
           adjusted_bounds%width, ' h=', adjusted_bounds%height, ') but WILL RECURSE'
         flush(debug_unit)
@@ -214,7 +214,7 @@ contains
 
     ! Draw the box using clipped adjusted bounds
     if (adjusted_bounds%y < max_y - 1) then
-      if (debug_opened .and. debug_unit /= 0 .and. depth <= 1 .and. scroll_offset > 0) then
+      if (debug_opened .and. debug_unit /= 0 .and. depth <= 4) then
         write(debug_unit, '(A,I1,A,I4,A,I3,A)') &
           '  → d=', depth, ' DRAW_BOX at y=', adjusted_bounds%y, ' h=', adjusted_bounds%height, &
           ' "' // trim(node%name) // '"'
